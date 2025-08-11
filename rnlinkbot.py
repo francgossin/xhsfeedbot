@@ -55,7 +55,6 @@ async def inline_xhslink_expander(update: Update, context: ContextTypes.DEFAULT_
 
 if __name__ == "__main__":
     application = ApplicationBuilder().token("Bot::Token").build()
-    # 8487171124:AAEWttNuiQWKqadKuTQui6hfWxeL96oycvs
     start_handler = CommandHandler("start", start)
     application.add_handler(start_handler)
 
