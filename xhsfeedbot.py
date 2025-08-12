@@ -7,12 +7,14 @@ from uuid import uuid4
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 from httpcore._exceptions import ReadTimeout
+from telegram.error import TimedOut
 from json.decoder import JSONDecodeError
 from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
 from selenium.common.exceptions import ElementNotInteractableException
+from telegram.error import NetworkError
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -122,7 +124,7 @@ class WebPage:
 
     def keep_cookie_alive(self):
         while True:
-            self.acts = [self.open_url, self.random_choose_note_to_view, self.scroll_down_for_more_note, self.go_home]
+            self.acts = [self.open_url, self.random_choose_note_to_view, self.scroll_down_for_more_note, self.go_home,]
             try:
                 # with self.lock:
                 #     cs = self.get_cookie_from_webdriver()
@@ -156,6 +158,7 @@ class WebPage:
                     logging.info(f"{i} th ACTION! -> {a}")
                     try:
                         a()
+                        self.init_page()
                     except:
                         continue
                     t = random.randint(5, 30)
@@ -299,6 +302,10 @@ class Note:
 
     def get_video_data(self):
         self.videoData = [v["masterUrl"] for v in self.data["video"]["media"]["stream"]["h264"]]
+        try:
+            self.videoData_backup = [v["backupUrls"][0] for v in self.data["video"]["media"]["stream"]["h264"]]
+        except:
+            logging.info(f"h264:\n{self.data["video"]["media"]["stream"]["h264"]}")
         return self.videoData
 
     def note_to_telegram_msg(self):
@@ -315,6 +322,7 @@ class Note:
         if self.type == "normal":
             self.telegram_msg["media"] = []
             self.telegram_msg["inline_media"] = []
+            self.telegram_msg["backup_video_media"] = []
             for n, img in enumerate(self.imageListData):
                 self.telegram_msg["media"].append(InputMediaPhoto(img["Data"]))
                 self.telegram_msg["inline_media"].append(InlineQueryResultPhoto(
@@ -349,6 +357,7 @@ class Note:
                     ))
         if self.type == "video":
             self.telegram_msg["media"] = [InputMediaVideo(requests.get(v).content) for v in self.videoData]
+            self.telegram_msg["backup_video_media"] = [InputMediaVideo(requests.get(v).content) for v in self.videoData]
             self.telegram_msg["inline_media"] = [InlineQueryResultVideo(
                 id=str(uuid4()),
                 video_url=v,
@@ -501,13 +510,22 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
         msg = note.note_to_telegram_msg()
+        logging.info(f"try reply message with {msg}")
         if len(msg["media"]) <= 10:
-            await context.bot.send_media_group(
-                chat_id=update.effective_chat.id, media=msg["media"],
-                reply_to_message_id=update.message.message_id,
-                caption=msg["msg"][0],
-                parse_mode=ParseMode.HTML,
-            )
+            try:
+                await context.bot.send_media_group(
+                    chat_id=update.effective_chat.id, media=msg["media"],
+                    reply_to_message_id=update.message.message_id,
+                    caption=msg["msg"][0],
+                    parse_mode=ParseMode.HTML,
+                )
+            except TimedOut:
+                await context.bot.send_media_group(
+                    chat_id=update.effective_chat.id, media=msg["backup_video_media"],
+                    reply_to_message_id=update.message.message_id,
+                    caption=msg["msg"][0],
+                    parse_mode=ParseMode.HTML,
+                )
         else:
             for i in range(len(msg["media"]) // 10 + 1):
                 logging.info(f"MEDIA GOURP {i} SENDING!")
@@ -538,7 +556,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=update.effective_chat.id,        
             reply_to_message_id=update.message.message_id,
-            text=f"Error!\n{e}\nPlease try again.")
+            text=f"Error!\n{e}\nPlease try again.\nmsg:{msg}")
 
 async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
@@ -623,13 +641,18 @@ def start_keep_cookie_thread(webpage: WebPage):
     t.start()
     logging.info("Cookie keep-alive thread started.")
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a Telegram message to notify the developer."""
+    # Log the error details
+    print(f"Update {update} caused error {context.error}")
+
 def main():
     start_keep_cookie_thread(webpage)
 
     application = ApplicationBuilder()\
         .token("Bot::Token")\
-        .read_timeout(60)\
-        .write_timeout(60)\
+        .read_timeout(120)\
+        .write_timeout(120)\
         .build()
 
     start_handler = CommandHandler("start", start)
@@ -645,9 +668,13 @@ def main():
         ),
         note2feed
     )
+
+    application.add_error_handler(error_handler)
+
     application.add_handler(note2feed_handler)
 
     application.run_polling()
+
 
 if __name__ == "__main__":
     webpage = WebPage()
