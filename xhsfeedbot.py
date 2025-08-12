@@ -475,7 +475,11 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(f"Clean Url: https://xiaohongshu.com/{typ}/{noteId_}\nAuthor link: https://www.xiaohongshu.com/user/profile/{note.user["userId"]}", reply_markup=reply_markup)
+        await update.message.reply_text(
+            f"Clean Url: https://xiaohongshu.com/{typ}/{noteId_}\nAuthor link: https://www.xiaohongshu.com/user/profile/{note.user["userId"]}",
+            reply_to_message_id=update.message.message_id,
+            reply_markup=reply_markup
+        )
         msg = note.note_to_telegram_msg()
         if len(msg["media"]) <= 10:
             await context.bot.send_media_group(
@@ -615,7 +619,10 @@ def main():
     application.add_handler(inline_note2feed_handler)
 
     note2feed_handler = MessageHandler(
-        filters.TEXT,
+        filters.TEXT & (
+            filters.Entity(MessageEntity.URL) |
+            filters.Entity(MessageEntity.TEXT_LINK)
+        ),
         note2feed
     )
     application.add_handler(note2feed_handler)
