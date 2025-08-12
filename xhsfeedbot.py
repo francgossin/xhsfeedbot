@@ -299,7 +299,7 @@ class Note:
     def note_to_telegram_msg(self):
         self.telegram_msg = {}
         preview_len = 233
-        self.telegram_msg["preview_text"] = f"""<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">{self.user["nickname"]}</a> :: <a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">[[ {self.title} ]]</a>
+        self.telegram_msg["preview_text"] = f"""<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a> :: <a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">[[ {self.title} ]]</a>
 <blockquote>{self.desc[:preview_len]}...</blockquote>
 <blockquote>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
 📍 {self.ipLocation}
@@ -357,7 +357,7 @@ class Note:
                 )
             ) for v in self.videoData]
         logging.info(self.url)
-        self.telegram_msg["msg"] = [f"""<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">{self.user["nickname"]}</a> :: <a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">[[ {self.title} ]]</a>
+        self.telegram_msg["msg"] = [f"""<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a> :: <a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">[[ {self.title} ]]</a>
 <blockquote>{self.desc}</blockquote>
 <blockquote>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
 📍 {self.ipLocation}
@@ -373,7 +373,7 @@ class Note:
             for each in range(len(msgs)):
                 if each == 0:
                     logging.info(f"MSGLIST creating, {each} th HEAD adding")
-                    self.telegram_msg["msg"].append(f"""<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">{self.user["nickname"]}</a> :: <a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">[[ {self.title} ]]</a>
+                    self.telegram_msg["msg"].append(f"""<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a> :: <a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">[[ {self.title} ]]</a>
 {msgs[each]}""")
                 elif each == len(msgs) - 1:
                     logging.info(f"MSGLIST creating, {each} th TAIL adding")
