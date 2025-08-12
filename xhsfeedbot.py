@@ -199,10 +199,8 @@ class Note:
             raise Exception("Parse Note ERROR!\nTry with another link.")
 
         self.user = self.data["user"]
-        if self.data["title"] != "":
-            self.title = self.data["title"]
-        else:
-            self.title = "_"
+        self.ftitle = f"『<b><u>{self.data["title"]}</u></b>』"
+        self.title = self.data["title"]
         self.desc = self.data["desc"]
         self.collectedCount = self.data["interactInfo"]["collectedCount"]
         self.commentCount = self.data["interactInfo"]["commentCount"]
@@ -256,7 +254,7 @@ class Note:
                 cookies=self.cookies,
                 # headers=self.headers,
             )
-            logging.warning(f'try xhslink\n{self.xhslink}')
+            logging.info(f'try xhslink\n{self.xhslink}')
             response = req.text
             try:
                 data = json.loads(self.soup.find_all("script")[-1].contents[0].replace("window.__INITIAL_STATE__=", '').replace("undefined", "\"undefined\"").replace("\"\"undefined\"\"", "\"undefined\""))["note"]["noteDetailMap"][self.noteId]["note"]
@@ -311,10 +309,10 @@ class Note:
     def note_to_telegram_msg(self):
         self.telegram_msg = {}
         preview_len = 233
-        self.telegram_msg["preview_text"] = f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.title}</a>
-<blockquote>{self.desc[:preview_len]}...</blockquote>
+        self.telegram_msg["preview_text"] = f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.ftitle}</a>
+<blockquote expandable>{self.desc[:preview_len]}...</blockquote>
 <a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
-<blockquote>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
+<blockquote expandable>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
 📍 {self.ipLocation}
 {get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
 ✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}</blockquote>"""
@@ -372,30 +370,30 @@ class Note:
                 )
             ) for v in self.videoData]
         logging.info(self.url)
-        self.telegram_msg["msg"] = [f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.title}</a>
-<blockquote>{self.desc}</blockquote>
+        self.telegram_msg["msg"] = [f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.ftitle}</a>
+<blockquote expandable>{self.desc}</blockquote>
 <a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
-<blockquote>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
+<blockquote expandable>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
 📍 {self.ipLocation}
 {get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
 ✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}</blockquote>"""]
 
-        logging.warning(f"MSG LENGTH: {len(self.telegram_msg["msg"][0])}!!!\n")
+        logging.info(f"MSG LENGTH: {len(self.telegram_msg["msg"][0])}!!!\n")
         split_lenth = 750
         if len(self.desc) > split_lenth:
-            logging.warning("msg_TOO_LONG!!!")
-            msgs = [f"<blockquote>{self.desc[i:i + split_lenth]}</blockquote>" for i in range(0, len(self.desc), split_lenth)]
+            logging.info("msg_TOO_LONG!!!")
+            msgs = [f"<blockquote expandable>{self.desc[i:i + split_lenth]}</blockquote>" for i in range(0, len(self.desc), split_lenth)]
             self.telegram_msg["msg"] = []
             for each in range(len(msgs)):
                 if each == 0:
                     logging.info(f"MSGLIST creating, {each} th HEAD adding")
-                    self.telegram_msg["msg"].append(f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.title}</a>
+                    self.telegram_msg["msg"].append(f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.ftitle}</a>
 {msgs[each]}""")
                 elif each == len(msgs) - 1:
                     logging.info(f"MSGLIST creating, {each} th TAIL adding")
                     self.telegram_msg["msg"].append(f"""{msgs[each]}
 <a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
-<blockquote>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
+<blockquote expandable>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
 📍 {self.ipLocation}
 {get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
 ✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}</blockquote>""")
@@ -642,9 +640,7 @@ def start_keep_cookie_thread(webpage: WebPage):
     logging.info("Cookie keep-alive thread started.")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log the error and send a Telegram message to notify the developer."""
-    # Log the error details
-    print(f"Update {update} caused error {context.error}")
+    logging.error(f"Update {update} caused error {context.error}")
 
 def main():
     start_keep_cookie_thread(webpage)
@@ -668,13 +664,11 @@ def main():
         ),
         note2feed
     )
+    application.add_handler(note2feed_handler)
 
     application.add_error_handler(error_handler)
 
-    application.add_handler(note2feed_handler)
-
     application.run_polling()
-
 
 if __name__ == "__main__":
     webpage = WebPage()
