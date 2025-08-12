@@ -189,12 +189,17 @@ class Note:
                 ).encode('utf-8')
             )
             f.close()
-        self.type = self.data["type"] # normal, video
+        try:
+            self.type = self.data["type"] # normal, video
+        except:
+            logging.error(f'Error! {traceback.format_exc()}')
+            raise Exception("Parse Note ERROR!\nTry with another link.")
+
         self.user = self.data["user"]
         if self.data["title"] != "":
             self.title = self.data["title"]
         else:
-            self.title = " "
+            self.title = "_"
         self.desc = self.data["desc"]
         self.collectedCount = self.data["interactInfo"]["collectedCount"]
         self.commentCount = self.data["interactInfo"]["commentCount"]
@@ -299,8 +304,9 @@ class Note:
     def note_to_telegram_msg(self):
         self.telegram_msg = {}
         preview_len = 233
-        self.telegram_msg["preview_text"] = f"""<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a> :: <a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">[[ {self.title} ]]</a>
+        self.telegram_msg["preview_text"] = f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.title}</a>
 <blockquote>{self.desc[:preview_len]}...</blockquote>
+<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
 <blockquote>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
 📍 {self.ipLocation}
 {get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
@@ -357,8 +363,9 @@ class Note:
                 )
             ) for v in self.videoData]
         logging.info(self.url)
-        self.telegram_msg["msg"] = [f"""<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a> :: <a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">[[ {self.title} ]]</a>
+        self.telegram_msg["msg"] = [f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.title}</a>
 <blockquote>{self.desc}</blockquote>
+<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
 <blockquote>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
 📍 {self.ipLocation}
 {get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
@@ -373,11 +380,12 @@ class Note:
             for each in range(len(msgs)):
                 if each == 0:
                     logging.info(f"MSGLIST creating, {each} th HEAD adding")
-                    self.telegram_msg["msg"].append(f"""<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a> :: <a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">[[ {self.title} ]]</a>
+                    self.telegram_msg["msg"].append(f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.title}</a>
 {msgs[each]}""")
                 elif each == len(msgs) - 1:
                     logging.info(f"MSGLIST creating, {each} th TAIL adding")
                     self.telegram_msg["msg"].append(f"""{msgs[each]}
+<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
 <blockquote>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
 📍 {self.ipLocation}
 {get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
@@ -431,7 +439,11 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             xsec_token_ = parse_qs(parsed_url_.query)['xsec_token'][0]
         except:
-            xsec_token_ = ''
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,        
+                reply_to_message_id=update.message.message_id,
+                text=f"Error!\nxsec_token empty: {parsed_url_}\nPlease send link with xsec_token!")
+            return
         if 'xiaohongshu.com/404' not in redirectPath_:
             noteId_ = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_)[0]
         else:
@@ -445,7 +457,11 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             xsec_token_ = parse_qs(parsed_url_.query)['xsec_token'][0]
         except:
-            xsec_token_ = ''
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,        
+                reply_to_message_id=update.message.message_id,
+                text=f"Error!\nxsec_token empty: {parsed_url_}\nPlease send link with xsec_token!")
+            return
         typ = "discovery/item"
     elif len(re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", update.message.text)) > 0:
         logging.info("EXPLORE in message!")
@@ -455,7 +471,11 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             xsec_token_ = parse_qs(parsed_url_.query)['xsec_token'][0]
         except:
-            xsec_token_ = ''
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,        
+                reply_to_message_id=update.message.message_id,
+                text=f"Error!\nxsec_token empty: {parsed_url_}\nPlease send link with xsec_token!")
+            return
         typ = "explore"
     else:
         logging.warning(f"NOTHING in message:\n{update.message.text}")
@@ -541,7 +561,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             xsec_token_ = parse_qs(parsed_url_.query)['xsec_token'][0]
         except:
-            xsec_token_ = ''
+            await context.bot.answer_inline_query(update.inline_query.id, results)
         if 'xiaohongshu.com/404' not in redirectPath_:
             noteId_ = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_)[0]
         else:
@@ -554,7 +574,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             xsec_token_ = parse_qs(parsed_url_.query)['xsec_token'][0]
         except:
-            xsec_token_ = ''
+            await context.bot.answer_inline_query(update.inline_query.id, results)
         typ = "discovery/item"
     elif re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", query):
         clean_ = get_clean_url(urls[0])
@@ -563,7 +583,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             xsec_token_ = parse_qs(parsed_url_.query)['xsec_token'][0]
         except:
-            xsec_token_ = ''
+            await context.bot.answer_inline_query(update.inline_query.id, results)
         typ = "explore"
     else:
         logging.warning(f"NOTHING in message:\n{query}")
