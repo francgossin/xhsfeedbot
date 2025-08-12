@@ -639,8 +639,9 @@ def start_keep_cookie_thread(webpage: WebPage):
     t.start()
     logging.info("Cookie keep-alive thread started.")
 
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logging.error(f"Update {update} caused error {context.error}")
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logging.error(f"Update {update} caused error {context.error}\n\n try shutdown")
+    raise Exception("ERROR!")
 
 def main():
     start_keep_cookie_thread(webpage)
@@ -667,8 +668,12 @@ def main():
     application.add_handler(note2feed_handler)
 
     application.add_error_handler(error_handler)
-
-    application.run_polling()
+    while 1:
+        try:
+            application.run_polling()
+        except:
+            application.shutdown()
+            logging.error(f'Error! {traceback.format_exc()}')
 
 if __name__ == "__main__":
     webpage = WebPage()
