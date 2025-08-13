@@ -1,4 +1,5 @@
 import asyncio, logging, re, requests, json, time, pytz, threading, random, traceback
+from pprint import pformat
 from telegram.ext import filters, MessageHandler, ApplicationBuilder, CommandHandler, ContextTypes, InlineQueryHandler
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, MessageEntity, InputMediaPhoto, InputMediaVideo, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultPhoto, InlineQueryResultVideo
 from telegram.constants import ParseMode
@@ -16,8 +17,18 @@ from selenium.webdriver.support.select import Select
 from selenium.common.exceptions import ElementNotInteractableException
 from telegram.error import NetworkError
 
+logging_file = f".\\log\\{datetime.now().strftime("%Y%m%d%H%M%S")}.log"
 logging.basicConfig(
+    handlers=[
+        logging.FileHandler(
+            filename=logging_file,
+            encoding="utf-8",
+            mode="w+",
+        ),
+        logging.StreamHandler()
+    ],
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%F %A %T",
     level=logging.INFO
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -28,11 +39,11 @@ class WebPage:
         try:
             with open('./cookie.json', 'r+', encoding="utf-8") as c:
                 self.cookies = json.load(c)
-                logging.info(f"cookie load FROM FILE:\n{self.cookies}")
+                logging.info(f"cookie load FROM FILE:\n{pformat(self.cookies, indent=4)}")
                 c.close()
             with open('./headers.json', 'r+', encoding="utf-8") as h:
                 self.headers = json.load(h)
-                logging.info(f"header load FROM FILE:\n{self.headers}")
+                logging.info(f"header load FROM FILE:\n{pformat(self.headers, indent=4)}")
                 h.close()
         except:
             logging.error(f"no previous cache!\n{traceback.format_exc()}")
@@ -226,13 +237,12 @@ class Note:
         with webpage.lock:
             self.cookies = webpage.get_cookie_from_webdriver()
             self.headers = webpage.get_headers_from_webdriver()
-        logging.info(f'\n\nurl=\'{self.url}\'\n\ncookies={self.cookies}\n\n')
+        logging.info(f'\n\nurl=\'{self.url}\'\n\ncookies={pformat(self.cookies, indent=4)}\n\n')
         req = requests.get(
             self.url,
             cookies=self.cookies,
             # headers=self.headers,
         )
-        logging.info(f"try url: {self.url}")
         response = req.text
         self.soup = BeautifulSoup(response,"html.parser")
         try:
@@ -269,7 +279,7 @@ class Note:
                     u = self.url.replace('explore', 'discovery/item')
                 else:
                     u = self.url
-                    logging.info(f"???{u}???")
+                    logging.info("UNKNOWN URL!")
                 logging.info(f"{u}")
                 req = requests.get(
                     u,
@@ -303,7 +313,7 @@ class Note:
         try:
             self.videoData_backup = [v["backupUrls"][0] for v in self.data["video"]["media"]["stream"]["h264"]]
         except:
-            logging.info(f"h264:\n{self.data["video"]["media"]["stream"]["h264"]}")
+            logging.info(f"h264:\n{pformat(self.data["video"]["media"]["stream"]["h264"], indent=4)}")
         return self.videoData
 
     def note_to_telegram_msg(self):
@@ -369,7 +379,6 @@ class Note:
                     [ [ InlineKeyboardButton("View More", url=f"tg://resolve?domain=xhsfeedbot&text=https://xiaohongshu.com/{self.typ}/{self.noteId}?xsec_token={self.xsecToken}"), ] ]
                 )
             ) for v in self.videoData]
-        logging.info(self.url)
         self.telegram_msg["msg"] = [f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.ftitle}</a>
 <blockquote expandable>{self.desc}</blockquote>
 <a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
@@ -378,8 +387,8 @@ class Note:
 {get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
 ✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}</blockquote>"""]
 
-        logging.info(f"MSG LENGTH: {len(self.telegram_msg["msg"][0])}!!!\n")
-        split_lenth = 750
+        logging.info(f"MSG LENGTH: {len(self.telegram_msg["msg"][0])}\n")
+        split_lenth = 800
         if len(self.desc) > split_lenth:
             logging.info("msg_TOO_LONG!!!")
             msgs = [f"<blockquote expandable>{self.desc[i:i + split_lenth]}</blockquote>" for i in range(0, len(self.desc), split_lenth)]
@@ -430,7 +439,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     urls = re.findall(r"(https?://\S+)", update.message.text)
 
     if len(urls) == 0:
-        logging.warning("NO URL NO URL")
+        logging.warning("NO URL FOUND!")
         return
     xhslink = urls[0]
     keyboard = [
@@ -508,7 +517,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
         msg = note.note_to_telegram_msg()
-        logging.info(f"try reply message with {msg}")
+        logging.info(f"try reply message with {pformat(msg, indent=4)}")
         if len(msg["media"]) <= 10:
             try:
                 await context.bot.send_media_group(
@@ -539,7 +548,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         caption=msg["msg"][0],
                         parse_mode=ParseMode.HTML,
                     )
-        logging.info(f"MSGLIST LEN: {len(msg["msg"])}")
+        logging.info(f"MSG LIST LEN: {len(msg["msg"])}")
         if len(msg["msg"]) > 1:
             logging.info(f"REMAINING MESSAGE SHOULD BE SENT")
             for each in range(1, len(msg["msg"])):
@@ -639,9 +648,23 @@ def start_keep_cookie_thread(webpage: WebPage):
     t.start()
     logging.info("Cookie keep-alive thread started.")
 
+def tg_msg_escape(t: str) -> str:
+    return t.replace('<', '&lt;')\
+        .replace('>','&gt;')\
+        .replace('&', '&amp;')
+
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logging.error(f"Update {update} caused error {context.error}\n\n try shutdown")
-    raise Exception("ERROR!")
+    global logging_file
+    try:
+        await context.bot.send_document(
+            chat_id=114514,
+            caption=f'<pre><code class="language-python">{tg_msg_escape(pformat(update))}</code></pre>\n CAUSED \n<pre><code class="language-python">{tg_msg_escape(pformat(context.error))}</code></pre>',
+            parse_mode=ParseMode.HTML,
+            document=logging_file,
+            disable_notification=True
+        )
+    except Exception as e:
+        logging.error(f"Update {update} caused error:\n{context.error}\n\n try shutdown\nsend message also error:\n\n{traceback.format_exc()}")
 
 def main():
     start_keep_cookie_thread(webpage)
