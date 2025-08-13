@@ -330,7 +330,6 @@ class Note:
         preview_len = 233
         self.telegram_msg["preview_text"] = f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId}")
 {self.fdesc[:preview_len]}\\.\\.\\.
-> ||
 [@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]}")
 **>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
 >📍 {self.ipLocation}
