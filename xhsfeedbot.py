@@ -210,15 +210,24 @@ class Note:
             raise Exception("Parse Note ERROR!\nTry with another link.")
 
         self.user = self.data["user"]
-        self.ftitle = f"『<b><u>{self.data["title"]}</u></b>』"
         self.title = self.data["title"]
+        self.ftitle = f"『*{tg_msg_escape_markdown_v2(self.title)}*』"
         self.desc = self.data["desc"]
-        self.collectedCount = self.data["interactInfo"]["collectedCount"]
-        self.commentCount = self.data["interactInfo"]["commentCount"]
-        self.likedCount = self.data["interactInfo"]["likedCount"]
-        self.shareCount = self.data["interactInfo"]["shareCount"]
+        self.fdesc = ''
+        lines = self.desc.split('\n')
+        for i, l in enumerate(lines):
+            if i == 0:
+                self.fdesc += f"**>{tg_msg_escape_markdown_v2(l)}\n"
+            elif i == len(lines) - 1:
+                self.fdesc += f">{tg_msg_escape_markdown_v2(l)}||"
+            else:
+                self.fdesc += f">{tg_msg_escape_markdown_v2(l)}\n"
+        self.collectedCount = tg_msg_escape_markdown_v2(self.data["interactInfo"]["collectedCount"])
+        self.commentCount = tg_msg_escape_markdown_v2(self.data["interactInfo"]["commentCount"])
+        self.likedCount = tg_msg_escape_markdown_v2(self.data["interactInfo"]["likedCount"])
+        self.shareCount = tg_msg_escape_markdown_v2(self.data["interactInfo"]["shareCount"])
         if "ipLocation" in self.data:
-            self.ipLocation = self.data["ipLocation"]
+            self.ipLocation = tg_msg_escape_markdown_v2(self.data["ipLocation"])
         else:
             self.ipLocation = "ip address unknown"
         self.time = self.data["time"]
@@ -319,13 +328,13 @@ class Note:
     def note_to_telegram_msg(self):
         self.telegram_msg = {}
         preview_len = 233
-        self.telegram_msg["preview_text"] = f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.ftitle}</a>
-<blockquote expandable>{self.desc[:preview_len]}...</blockquote>
-<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
-<blockquote expandable>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
-📍 {self.ipLocation}
-{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
-✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}</blockquote>"""
+        self.telegram_msg["preview_text"] = f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId}")
+{self.fdesc[:preview_len]}\\.\\.\\.||
+[@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]}")
+**>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
+>📍 {self.ipLocation}
+>{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
+>✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}||"""
 
         if self.type == "normal":
             self.telegram_msg["media"] = []
@@ -340,7 +349,7 @@ class Note:
                         title=f"{n + 1} th photo",
                         description=f"{self.title}",
                         caption=self.telegram_msg["preview_text"],
-                        parse_mode=ParseMode.HTML,
+                        parse_mode=ParseMode.MARKDOWN_V2,
                         reply_markup=InlineKeyboardMarkup(
                             [ [ InlineKeyboardButton("View More", url=f"tg://resolve?domain=xhsfeedbot&text=https://xiaohongshu.com/{self.typ}/{self.noteId}?xsec_token={self.xsecToken}"), ] ]
                         )
@@ -358,7 +367,7 @@ class Note:
                         title=f"live video of {n + 1} th photo",
                         description=f"{self.title}",
                         caption=self.telegram_msg["preview_text"],
-                        parse_mode=ParseMode.HTML,
+                        parse_mode=ParseMode.MARKDOWN_V2,
                         reply_markup=InlineKeyboardMarkup(
                             [ [ InlineKeyboardButton("View More", url=f"tg://resolve?domain=xhsfeedbot&text=https://xiaohongshu.com/{self.typ}/{self.noteId}?xsec_token={self.xsecToken}"), ] ]
                         )
@@ -374,41 +383,53 @@ class Note:
                 description=f"{self.title}",
                 thumbnail_url=self.preload,
                 caption=self.telegram_msg["preview_text"],
-                parse_mode=ParseMode.HTML,
+                parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=InlineKeyboardMarkup(
                     [ [ InlineKeyboardButton("View More", url=f"tg://resolve?domain=xhsfeedbot&text=https://xiaohongshu.com/{self.typ}/{self.noteId}?xsec_token={self.xsecToken}"), ] ]
                 )
             ) for v in self.videoData]
-        self.telegram_msg["msg"] = [f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.ftitle}</a>
-<blockquote expandable>{self.desc}</blockquote>
-<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
-<blockquote expandable>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
-📍 {self.ipLocation}
-{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
-✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}</blockquote>"""]
+        self.telegram_msg["msg"] = [f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId}")
+{self.fdesc}
+[@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]}")
+**>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
+>📍 {self.ipLocation}
+>{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
+>✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}||"""]
 
         logging.info(f"MSG LENGTH: {len(self.telegram_msg["msg"][0])}\n")
-        split_lenth = 800
+        split_lenth = 666
         if len(self.desc) > split_lenth:
             logging.info("msg_TOO_LONG!!!")
-            msgs = [f"<blockquote expandable>{self.desc[i:i + split_lenth]}</blockquote>" for i in range(0, len(self.desc), split_lenth)]
+            msgs = [f"{self.desc[i:i + split_lenth]}" for i in range(0, len(self.desc), split_lenth)]
+            fmgs = []
+            for m in msgs:
+                new_msg = ''
+                lines = m.split('\n')
+                for n, l in enumerate(lines):
+                    if n == 0:
+                        new_msg += f"**>{tg_msg_escape_markdown_v2(l)}\n"
+                    elif n == len(lines) - 1:
+                        new_msg += f">{tg_msg_escape_markdown_v2(l)}||"
+                    else:
+                        new_msg += f">{tg_msg_escape_markdown_v2(l)}\n"
+                fmgs.append(new_msg)
             self.telegram_msg["msg"] = []
-            for each in range(len(msgs)):
+            for each in range(len(fmgs)):
                 if each == 0:
                     logging.info(f"MSGLIST creating, {each} th HEAD adding")
-                    self.telegram_msg["msg"].append(f"""<a href="https://www.xiaohongshu.com/{self.typ}/{self.noteId}">{self.ftitle}</a>
-{msgs[each]}""")
-                elif each == len(msgs) - 1:
+                    self.telegram_msg["msg"].append(f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId})
+{fmgs[each]}""")
+                elif each == len(fmgs) - 1:
                     logging.info(f"MSGLIST creating, {each} th TAIL adding")
-                    self.telegram_msg["msg"].append(f"""{msgs[each]}
-<a href="https://www.xiaohongshu.com/user/profile/{self.user["userId"]}">@{self.user["nickname"]}</a>
-<blockquote expandable>👍 {self.likedCount} | ⭐️ {self.collectedCount} | 💬 {self.commentCount}
-📍 {self.ipLocation}
-{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
-✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}</blockquote>""")
+                    self.telegram_msg["msg"].append(f"""{fmgs[each]}
+[@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]}")
+**>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
+>📍 {self.ipLocation}
+>{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
+>✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}||""")
                 else:
                     logging.info(f"MSGLIST creating, {each} th BODY adding")
-                    self.telegram_msg["msg"].append(msg[each])
+                    self.telegram_msg["msg"].append(fmgs[each])
         return self.telegram_msg
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -432,7 +453,7 @@ def convert_timestamp_to_timestr(timestamp, timezone_name):
     utc_dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
     tz = pytz.timezone(timezone_name)
     local_dt = utc_dt.replace(tzinfo=pytz.utc).astimezone(tz)
-    return local_dt.strftime('%Y-%m-%d %H:%M:%S %Z%z')
+    return tg_msg_escape_markdown_v2(local_dt.strftime('%Y-%m-%d %H:%M:%S %Z%z'))
 
 async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global webpage
@@ -524,14 +545,14 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=update.effective_chat.id, media=msg["media"],
                     reply_to_message_id=update.message.message_id,
                     caption=msg["msg"][0],
-                    parse_mode=ParseMode.HTML,
+                    parse_mode=ParseMode.MARKDOWN_V2,
                 )
             except TimedOut:
                 await context.bot.send_media_group(
                     chat_id=update.effective_chat.id, media=msg["backup_video_media"],
                     reply_to_message_id=update.message.message_id,
                     caption=msg["msg"][0],
-                    parse_mode=ParseMode.HTML,
+                    parse_mode=ParseMode.MARKDOWN_V2,
                 )
         else:
             for i in range(len(msg["media"]) // 10 + 1):
@@ -546,7 +567,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         chat_id=update.effective_chat.id, media=msg["media"][i * 10: (i + 1) * 10],
                         reply_to_message_id=update.message.message_id,
                         caption=msg["msg"][0],
-                        parse_mode=ParseMode.HTML,
+                        parse_mode=ParseMode.MARKDOWN_V2,
                     )
         logging.info(f"MSG LIST LEN: {len(msg["msg"])}")
         if len(msg["msg"]) > 1:
@@ -556,7 +577,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=update.effective_chat.id,        
                     reply_to_message_id=update.message.message_id,
                     text=msg["msg"][each],
-                    parse_mode=ParseMode.HTML
+                    parse_mode=ParseMode.MARKDOWN_V2
                 )
     except Exception as e:
         logging.error(f'Error! {traceback.format_exc()}')
@@ -648,18 +669,23 @@ def start_keep_cookie_thread(webpage: WebPage):
     t.start()
     logging.info("Cookie keep-alive thread started.")
 
-def tg_msg_escape(t: str) -> str:
+def tg_msg_escape_html(t: str) -> str:
     return t.replace('<', '&lt;')\
         .replace('>','&gt;')\
         .replace('&', '&amp;')
+
+def tg_msg_escape_markdown_v2(t: str) -> str:
+    for i in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+        t = t.replace(i, "\\" + i)
+    return t
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     global logging_file
     try:
         await context.bot.send_document(
             chat_id=114514,
-            caption=f'<pre><code class="language-python">{tg_msg_escape(pformat(update))}</code></pre>\n CAUSED \n<pre><code class="language-python">{tg_msg_escape(pformat(context.error))}</code></pre>',
-            parse_mode=ParseMode.HTML,
+            caption=f'```python\n{tg_msg_escape_markdown_v2(pformat(update))}\n```\n CAUSED \n```python\n{tg_msg_escape_markdown_v2(pformat(context.error))}```',
+            parse_mode=ParseMode.MARKDOWN_V2,
             document=logging_file,
             disable_notification=True
         )
@@ -671,8 +697,8 @@ def main():
 
     application = ApplicationBuilder()\
         .token("Bot::Token")\
-        .read_timeout(120)\
-        .write_timeout(120)\
+        .read_timeout(60)\
+        .write_timeout(60)\
         .build()
 
     start_handler = CommandHandler("start", start)
