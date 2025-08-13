@@ -214,14 +214,25 @@ class Note:
         self.ftitle = f"『*{tg_msg_escape_markdown_v2(self.title)}*』"
         self.desc = self.data["desc"]
         self.fdesc = ''
+        self.pvfdesc = ''
+        self.pvlimit = 233
         lines = self.desc.split('\n')
         for i, l in enumerate(lines):
             if i == 0:
                 self.fdesc += f"**>{tg_msg_escape_markdown_v2(l)}\n"
-            elif i == len(lines) - 1:
+            elif i == len(lines) - 1 and len(lines) >= 3:
                 self.fdesc += f">{tg_msg_escape_markdown_v2(l)}||"
             else:
                 self.fdesc += f">{tg_msg_escape_markdown_v2(l)}\n"
+
+        pvlines = self.desc[:self.pvlimit].split('\n')
+        for i, l in enumerate(pvlines):
+            if i == 0:
+                self.pvfdesc += f"**>{tg_msg_escape_markdown_v2(l)}\n"
+            elif i == len(pvlines) - 1 and len(pvlines) >= 3:
+                self.pvfdesc += f">{tg_msg_escape_markdown_v2(l)}\\.\\.\\.||"
+            else:
+                self.pvfdesc += f">{tg_msg_escape_markdown_v2(l)}\n"
         self.collectedCount = tg_msg_escape_markdown_v2(self.data["interactInfo"]["collectedCount"])
         self.commentCount = tg_msg_escape_markdown_v2(self.data["interactInfo"]["commentCount"])
         self.likedCount = tg_msg_escape_markdown_v2(self.data["interactInfo"]["likedCount"])
@@ -327,14 +338,14 @@ class Note:
 
     def note_to_telegram_msg(self):
         self.telegram_msg = {}
-        preview_len = 233
         self.telegram_msg["preview_text"] = f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId}")
-{self.fdesc[:preview_len]}\\.\\.\\.
+{self.pvfdesc}
 [@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]}")
 **>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
 >📍 {self.ipLocation}
 >{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
 >✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}||"""
+        logging.info(f"PREVIEW: \n{pformat(self.telegram_msg["preview_text"])}")
 
         if self.type == "normal":
             self.telegram_msg["media"] = []
@@ -659,6 +670,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
         msg = note.note_to_telegram_msg()
+        logging.info(f"INLINE msg: {pformat(msg, indent=4)}")
         results += msg["inline_media"]
         await context.bot.answer_inline_query(update.inline_query.id, results)
     except Exception as e:
