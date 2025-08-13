@@ -329,7 +329,8 @@ class Note:
         self.telegram_msg = {}
         preview_len = 233
         self.telegram_msg["preview_text"] = f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId}")
-{self.fdesc[:preview_len]}\\.\\.\\.||
+{self.fdesc[:preview_len]}\\.\\.\\.
+> ||
 [@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]}")
 **>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
 >📍 {self.ipLocation}
@@ -662,7 +663,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         results += msg["inline_media"]
         await context.bot.answer_inline_query(update.inline_query.id, results)
     except Exception as e:
-        logging.error(f'Error! {traceback.format_exc()}')
+        logging.error(f'Error! {traceback.format_exc()}\nresults:\n\n{pformat(results, indent=4)}')
 
 def start_keep_cookie_thread(webpage: WebPage):
     t = threading.Thread(target=webpage.keep_cookie_alive, daemon=True)
