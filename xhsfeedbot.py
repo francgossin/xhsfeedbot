@@ -338,9 +338,9 @@ class Note:
 
     def note_to_telegram_msg(self):
         self.telegram_msg = {}
-        self.telegram_msg["preview_text"] = f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId}")
+        self.telegram_msg["preview_text"] = f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId})
 {self.pvfdesc}
-[@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]}")
+[@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]})
 **>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
 >📍 {self.ipLocation}
 >{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
@@ -399,9 +399,9 @@ class Note:
                     [ [ InlineKeyboardButton("View More", url=f"tg://resolve?domain=xhsfeedbot&text=https://xiaohongshu.com/{self.typ}/{self.noteId}?xsec_token={self.xsecToken}"), ] ]
                 )
             ) for v in self.videoData]
-        self.telegram_msg["msg"] = [f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId}")
+        self.telegram_msg["msg"] = [f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId})
 {self.fdesc}
-[@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]}")
+[@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]})
 **>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
 >📍 {self.ipLocation}
 >{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
@@ -433,7 +433,7 @@ class Note:
                 elif each == len(fmgs) - 1:
                     logging.info(f"MSGLIST creating, {each} th TAIL adding")
                     self.telegram_msg["msg"].append(f"""{fmgs[each]}
-[@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]}")
+[@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]})
 **>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
 >📍 {self.ipLocation}
 >{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
