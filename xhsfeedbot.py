@@ -29,7 +29,7 @@ logging.basicConfig(
     ],
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%F %A %T",
-    level=logging.INFO
+    level=logging.WARNING
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -39,11 +39,11 @@ class WebPage:
         try:
             with open('./cookie.json', 'r+', encoding="utf-8") as c:
                 self.cookies = json.load(c)
-                logging.info(f"cookie load FROM FILE:\n{pformat(self.cookies, indent=4)}")
+                logging.debug(f"cookie load FROM FILE:\n{pformat(self.cookies, indent=4)}")
                 c.close()
             with open('./headers.json', 'r+', encoding="utf-8") as h:
                 self.headers = json.load(h)
-                logging.info(f"header load FROM FILE:\n{pformat(self.headers, indent=4)}")
+                logging.debug(f"header load FROM FILE:\n{pformat(self.headers, indent=4)}")
                 h.close()
         except:
             logging.error(f"no previous cache!\n{traceback.format_exc()}")
@@ -54,7 +54,7 @@ class WebPage:
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument('--remote-debugging-pipe')
         options.add_argument("--log-level=3")
-        logging.info("try start selenium now")
+        logging.debug("try start selenium now")
         self.driver = webdriver.Chrome(options)
         self.actions = ActionChains(self.driver)
         # self.driver.add_cookie(self.cookies)
@@ -127,7 +127,7 @@ class WebPage:
             self.scroll_distance += random.randint(500, 800)
         else:
             self.scroll_distance -= random.randint(500, 800)
-        logging.info(f"window.scrollTo(0, {self.scroll_distance})")
+        logging.debug(f"window.scrollTo(0, {self.scroll_distance})")
         self.driver.execute_script(f"window.scrollTo(0, {self.scroll_distance})")
     
     def go_home(self):
@@ -166,18 +166,18 @@ class WebPage:
                 #     h.close()
                 for i in range(random.randint(2,10)):
                     a = random.choice(self.acts)
-                    logging.info(f"{i} th ACTION! -> {a}")
+                    logging.debug(f"{i} th ACTION! -> {a}")
                     try:
                         a()
                         self.init_page()
                     except:
                         continue
                     t = random.randint(5, 30)
-                    logging.info(f"{i} th ACTION! -> {t}s sleep")
+                    logging.debug(f"{i} th ACTION! -> {t}s sleep")
                     time.sleep(t)
                     if random.random() <= 0.05:
                         l = random.randint(300, 500)
-                        logging.info(f"{i} th ACTION! -> {l}s sleep")
+                        logging.debug(f"{i} th ACTION! -> {l}s sleep")
                         time.sleep(l)
             except ElementNotInteractableException:
                 logging.error('ElementNotInteractableException')
@@ -192,17 +192,6 @@ class Note:
         self.xhslink = xhslink
         self.url = f"https://www.xiaohongshu.com/{self.typ}/{self.noteId}?xsec_token={xsec_token}"
         self.data = self.get_note_data(xsec_token)
-        with open(f'./note_data/{self.noteId}.json', 'wb+')as f:
-            f.write(
-                json.dumps(
-                    self.data,
-                    sort_keys=True,
-                    indent=4,
-                    separators=(',', ': '),
-                    ensure_ascii=False
-                ).encode('utf-8')
-            )
-            f.close()
         try:
             self.type = self.data["type"] # normal, video
         except:
@@ -257,7 +246,7 @@ class Note:
         with webpage.lock:
             self.cookies = webpage.get_cookie_from_webdriver()
             self.headers = webpage.get_headers_from_webdriver()
-        logging.info(f'\n\nurl=\'{self.url}\'\n\ncookies={pformat(self.cookies, indent=4)}\n\n')
+        logging.debug(f'\n\nurl=\'{self.url}\'\n\ncookies={pformat(self.cookies, indent=4)}\n\n')
         req = requests.get(
             self.url,
             cookies=self.cookies,
@@ -284,7 +273,7 @@ class Note:
                 cookies=self.cookies,
                 # headers=self.headers,
             )
-            logging.info(f'try xhslink\n{self.xhslink}')
+            logging.warning(f'try xhslink\n{self.xhslink}')
             response = req.text
             try:
                 data = json.loads(self.soup.find_all("script")[-1].contents[0].replace("window.__INITIAL_STATE__=", '').replace("undefined", "\"undefined\"").replace("\"\"undefined\"\"", "\"undefined\""))["note"]["noteDetailMap"][self.noteId]["note"]
@@ -299,8 +288,8 @@ class Note:
                     u = self.url.replace('explore', 'discovery/item')
                 else:
                     u = self.url
-                    logging.info("UNKNOWN URL!")
-                logging.info(f"{u}")
+                    logging.warning("UNKNOWN URL!")
+                logging.warning(f"{u}")
                 req = requests.get(
                     u,
                     cookies=self.cookies,
@@ -333,7 +322,7 @@ class Note:
         try:
             self.videoData_backup = [v["backupUrls"][0] for v in self.data["video"]["media"]["stream"]["h264"]]
         except:
-            logging.info(f"h264:\n{pformat(self.data["video"]["media"]["stream"]["h264"], indent=4)}")
+            logging.warning(f"h264:\n{pformat(self.data["video"]["media"]["stream"]["h264"], indent=4)}")
         return self.videoData
 
     def note_to_telegram_msg(self):
@@ -345,7 +334,7 @@ class Note:
 >📍 {self.ipLocation}
 >{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
 >✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}||"""
-        logging.info(f"PREVIEW: \n{pformat(self.telegram_msg["preview_text"])}")
+        logging.debug(f"PREVIEW: \n{pformat(self.telegram_msg["preview_text"])}")
 
         if self.type == "normal":
             self.telegram_msg["media"] = []
@@ -407,10 +396,10 @@ class Note:
 >{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
 >✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}||"""]
 
-        logging.info(f"MSG LENGTH: {len(self.telegram_msg["msg"][0])}\n")
+        logging.debug(f"MSG LENGTH: {len(self.telegram_msg["msg"][0])}\n")
         split_lenth = 666
         if len(self.desc) > split_lenth:
-            logging.info("msg_TOO_LONG!!!")
+            logging.debug("msg_TOO_LONG!!!")
             msgs = [f"{self.desc[i:i + split_lenth]}" for i in range(0, len(self.desc), split_lenth)]
             fmgs = []
             for m in msgs:
@@ -427,11 +416,11 @@ class Note:
             self.telegram_msg["msg"] = []
             for each in range(len(fmgs)):
                 if each == 0:
-                    logging.info(f"MSGLIST creating, {each} th HEAD adding")
+                    logging.debug(f"MSGLIST creating, {each} th HEAD adding")
                     self.telegram_msg["msg"].append(f"""[{self.ftitle}](https://www.xiaohongshu.com/{self.typ}/{self.noteId})
 {fmgs[each]}""")
                 elif each == len(fmgs) - 1:
-                    logging.info(f"MSGLIST creating, {each} th TAIL adding")
+                    logging.debug(f"MSGLIST creating, {each} th TAIL adding")
                     self.telegram_msg["msg"].append(f"""{fmgs[each]}
 [@{tg_msg_escape_markdown_v2(self.user["nickname"])}](https://www.xiaohongshu.com/user/profile/{self.user["userId"]})
 **>👍 {self.likedCount} \\| ⭐️ {self.collectedCount} \\| 💬 {self.commentCount}
@@ -439,7 +428,7 @@ class Note:
 >{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time/1000, 'Asia/Shanghai')}
 >✏️ {convert_timestamp_to_timestr(self.lastUpdateTime/1000, 'Asia/Shanghai')}||""")
                 else:
-                    logging.info(f"MSGLIST creating, {each} th BODY adding")
+                    logging.debug(f"MSGLIST creating, {each} th BODY adding")
                     self.telegram_msg["msg"].append(fmgs[each])
         return self.telegram_msg
 
@@ -480,8 +469,8 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
     redirectPath_ = get_redirected_url(xhslink)
-    if len(re.findall(r"https?://(?:www.)?xhslink.com/m/[A-Za-z0-9]+", update.message.text)) > 0:
-        logging.info("XHSLINK in message!")
+    if len(re.findall(r"https?://(?:www.)?xhslink.com/[a-z]/[A-Za-z0-9]+", update.message.text)) > 0:
+        logging.debug("XHSLINK in message!")
         clean_ = get_clean_url(redirectPath_)
         parsed_url_ = urlparse(redirectPath_)
         try:
@@ -498,7 +487,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             noteId_ = re.findall(r"noteId=([a-z0-9]+)", redirectPath_)[0]
         typ = "discovery/item"
     elif len(re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/[0-9a-z]+", update.message.text)) > 0:
-        logging.info("DISCOVERY/ITEM in message!")
+        logging.debug("DISCOVERY/ITEM in message!")
         clean_ = get_clean_url(urls[0])
         noteId_ = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_)[0]
         parsed_url_ = urlparse(urls[0])
@@ -512,7 +501,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         typ = "discovery/item"
     elif len(re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", update.message.text)) > 0:
-        logging.info("EXPLORE in message!")
+        logging.debug("EXPLORE in message!")
         clean_ = get_clean_url(urls[0])
         noteId_ = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", clean_)[0]
         parsed_url_ = urlparse(urls[0])
@@ -529,9 +518,9 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.warning(f"NOTHING in message:\n{update.message.text}")
         logging.warning(f"explore: {re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", update.message.text)}\n")
         logging.warning(f"discovery/item: {re.findall(r"https?://(?:www.)?.xiaohongshu.com/discovery/item/[a-z0-9]+", update.message.text)}\n")
-        logging.warning(f"xhslink: {re.findall(r"https?://xhslink.com/m/[A-Za-z0-9]+", update.message.text)}")
+        logging.warning(f"xhslink: {re.findall(r"https?://xhslink.com/[a-z]/[A-Za-z0-9]+", update.message.text)}")
         return
-    logging.info(f'typ:{typ}\noriginal:{urls}\nredirectPath_:{redirectPath_}\nnoteId: {noteId_}\nxsec_token:{xsec_token_}\nparsed_url_:{parsed_url_}')
+    logging.debug(f'typ:{typ}\noriginal:{urls}\nredirectPath_:{redirectPath_}\nnoteId: {noteId_}\nxsec_token:{xsec_token_}\nparsed_url_:{parsed_url_}')
     keyboard[0].append(
         InlineKeyboardButton("Link with xsec_token", url=f"https://xiaohongshu.com/{typ}/{noteId_}?xsec_token={xsec_token_}"),
     )
@@ -549,7 +538,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
         msg = note.note_to_telegram_msg()
-        logging.info(f"try reply message with {pformat(msg, indent=4)}")
+        logging.debug(f"try reply message with {pformat(msg, indent=4)}")
         if len(msg["media"]) <= 10:
             try:
                 await context.bot.send_media_group(
@@ -567,7 +556,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
         else:
             for i in range(len(msg["media"]) // 10 + 1):
-                logging.info(f"MEDIA GOURP {i} SENDING!")
+                logging.debug(f"MEDIA GOURP {i} SENDING!")
                 if i < len(msg["media"]) // 10:
                     await context.bot.send_media_group(
                         chat_id=update.effective_chat.id, media=msg["media"][i * 10: (i + 1) * 10],
@@ -580,9 +569,9 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         caption=msg["msg"][0],
                         parse_mode=ParseMode.MARKDOWN_V2,
                     )
-        logging.info(f"MSG LIST LEN: {len(msg["msg"])}")
+        logging.debug(f"MSG LIST LEN: {len(msg["msg"])}")
         if len(msg["msg"]) > 1:
-            logging.info(f"REMAINING MESSAGE SHOULD BE SENT")
+            logging.debug(f"REMAINING MESSAGE SHOULD BE SENT")
             for each in range(1, len(msg["msg"])):
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,        
@@ -612,7 +601,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
     redirectPath_ = get_redirected_url(xhslink)
-    if re.findall(r"https?://xhslink.com/m/[A-Za-z0-9]+", query):
+    if re.findall(r"https?://xhslink.com/[a-z]/[A-Za-z0-9]+", query):
         clean_ = get_clean_url(redirectPath_)
         parsed_url_ = urlparse(redirectPath_)
         try:
@@ -646,9 +635,9 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.warning(f"NOTHING in message:\n{query}")
         logging.warning(f"explore: {re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", query)}\n")
         logging.warning(f"discovery/item: {re.findall(r"https?://(?:www.)?.xiaohongshu.com/discovery/item/[a-z0-9]+", query)}\n")
-        logging.warning(f"xhslink: {re.findall(r"https?://xhslink.com/m/[A-Za-z0-9]+", query)}")
+        logging.warning(f"xhslink: {re.findall(r"https?://xhslink.com/[a-z]/[A-Za-z0-9]+", query)}")
         return
-    logging.info(f'typ:{typ}\noriginal:{urls}\nredirectPath_:{redirectPath_}\nnoteId: {noteId_}\nxsec_token:{xsec_token_}\nparsed_url_:{parsed_url_}')
+    logging.debug(f'typ:{typ}\noriginal:{urls}\nredirectPath_:{redirectPath_}\nnoteId: {noteId_}\nxsec_token:{xsec_token_}\nparsed_url_:{parsed_url_}')
     keyboard[0].append(
         InlineKeyboardButton("Link with xsec_token", url=f"https://xiaohongshu.com/{typ}/{noteId_}?xsec_token={xsec_token_}"),
     )
@@ -670,7 +659,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
         msg = note.note_to_telegram_msg()
-        logging.info(f"INLINE msg: {pformat(msg, indent=4)}")
+        logging.debug(f"INLINE msg: {pformat(msg, indent=4)}")
         results += msg["inline_media"]
         await context.bot.answer_inline_query(update.inline_query.id, results)
     except Exception as e:
@@ -679,7 +668,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def start_keep_cookie_thread(webpage: WebPage):
     t = threading.Thread(target=webpage.keep_cookie_alive, daemon=True)
     t.start()
-    logging.info("Cookie keep-alive thread started.")
+    logging.debug("Cookie keep-alive thread started.")
 
 def tg_msg_escape_html(t: str) -> str:
     return t.replace('<', '&lt;')\
