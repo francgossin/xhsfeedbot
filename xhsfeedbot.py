@@ -700,6 +700,7 @@ def main():
         .token("Bot::Token")\
         .read_timeout(60)\
         .write_timeout(60)\
+        .media_write_timeout(300)\
         .build()
 
     start_handler = CommandHandler("start", start)
