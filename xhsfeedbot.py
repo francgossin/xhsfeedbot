@@ -528,7 +528,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         note = Note(noteId=noteId_, xsec_token=xsec_token_, webpage=webpage, typ=typ, xhslink=xhslink)
         keyboard[0].append(
             InlineKeyboardButton(
-                "Author link with xsec_token", url=f"https://www.xiaohongshu.com/user/profile/{note.user["userId"]}?{note.user["xsecToken"]}"
+                "Author link with xsec_token", url=f"https://www.xiaohongshu.com/user/profile/{note.user["userId"]}?xsec_token={note.user["xsecToken"]}"
             )
         )
         reply_markup = InlineKeyboardMarkup(keyboard)
