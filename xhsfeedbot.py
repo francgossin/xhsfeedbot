@@ -518,7 +518,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", xhslink)[0]
         else:
             return
-    if os.getenv('TARGET_DEVICE_TYPE') == '1':
+    if os.getenv('TARGET_DEVICE_TYPE') == '1' and os.getenv('LOCAL_DEVICE_TYPE') != '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(
@@ -527,7 +527,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             username=os.getenv('SSH_USERNAME'),
             password=os.getenv('SSH_PASSWORD')
         )
-    elif os.getenv('TARGET_DEVICE_TYPE') == '0':
+    else:
         ssh = None
     open_note(noteId, ssh)
     time.sleep(3)
@@ -608,7 +608,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             raise Exception("No valid URL or Note ID found!")
 
-    if os.getenv('TARGET_DEVICE_TYPE') == '1':
+    if os.getenv('TARGET_DEVICE_TYPE') == '1' and os.getenv('LOCAL_DEVICE_TYPE') != '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(
