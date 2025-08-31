@@ -470,7 +470,7 @@ def tg_msg_escape_markdown_v2(t: str) -> str:
         t = t.replace(i, "\\" + i)
     return t
 
-def open_note(noteId: str, connected_ssh_client: paramiko.SSHClient = None):
+def open_note(noteId: str, connected_ssh_client=None):
     if os.getenv('TARGET_DEVICE_TYPE') == '0':
         subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}"])
     elif os.getenv('TARGET_DEVICE_TYPE') == '1':
@@ -481,7 +481,7 @@ def open_note(noteId: str, connected_ssh_client: paramiko.SSHClient = None):
         else:
             subprocess.run(["uiopen", f"xhsdiscover://item/{noteId}"])
 
-def home_page(connected_ssh_client: paramiko.SSHClient = None):
+def home_page(connected_ssh_client=None):
     if os.getenv('TARGET_DEVICE_TYPE') == '0':
         subprocess.run(["adb", "shell", "am", "start", "-d", "xhsdiscover://home"])
     elif os.getenv('TARGET_DEVICE_TYPE') == '1':
