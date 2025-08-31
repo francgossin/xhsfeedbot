@@ -35,9 +35,6 @@ from telegram import (
 from telegram.constants import ParseMode
 from telegraph.aio import Telegraph
 
-from mitmproxy.tools.main import mitmdump
-from mitmproxy import http
-
 # Load environment variables from .env file
 load_dotenv()
 
@@ -66,69 +63,6 @@ def replace_redemoji_with_emoji(text: str) -> str:
     for red_emoji, emoji in redtoemoji.items():
         text = text.replace(red_emoji, emoji)
     return text
-
-def set_request(note_id:str, url: str, headers: dict, type: str) -> dict:
-    if note_id is None:
-        return {}
-    requests.post(
-        f"http://127.0.0.1:5001/set_{type}",
-        json={"note_id": note_id, "url": url, "headers": headers}
-    )
-    return {'url': url, 'headers': headers}
-
-class ImageFeedFilter:
-    def __init__(self, callback):
-        self.callback = callback
-        self.url_pattern = re.compile(r"https://edith.xiaohongshu.com/api/sns/v\d+/note/imagefeed")
-        self.type = 'note'
-
-    def get_note_id(self, url: str) -> str:
-        parsed_url = urlparse(url)
-        query_params = parse_qs(parsed_url.query)
-        note_id = query_params.get('note_id', [None])[0]
-        return note_id
-
-    def request(self, flow: http.HTTPFlow) -> None:
-        if self.url_pattern.search(flow.request.pretty_url):
-            self.callback(
-                self.get_note_id(flow.request.pretty_url),
-                flow.request.pretty_url,
-                {k: v for k, v in flow.request.headers.items()},
-                self.type
-            )
-
-    # def response(self, flow: http.HTTPFlow) -> None:
-    #     if self.url_pattern.search(flow.request.pretty_url):
-    #         flow.response.status_code = 200
-
-class CommentListFilter(ImageFeedFilter):
-    def __init__(self, callback):
-        super().__init__(callback)
-        self.url_pattern = re.compile(r'https?://edith.xiaohongshu.com/api/sns/v\d+/note/comment/list')
-        self.type = 'comment_list'
-
-    def request(self, flow: http.HTTPFlow) -> None:
-        if self.url_pattern.search(flow.request.pretty_url):
-            self.callback(
-                self.get_note_id(flow.request.pretty_url),
-                flow.request.pretty_url,
-                {k: v for k, v in flow.request.headers.items()},
-                self.type
-            )
-
-    def response(self, flow: http.HTTPFlow) -> None:
-        pass
-
-
-class BlockURLs:
-    def __init__(self, block_pattern_list):
-        self.block_pattern_list = block_pattern_list
-    
-    def response(self, flow: http.HTTPFlow) -> None:
-        if [True for pattern in self.block_pattern_list if re.findall(pattern, flow.request.pretty_url)]:
-            flow.response.status_code = 345
-            flow.response.content = b"{'fuckxhs': true}"
-
 
 class Note:
     def __init__(
@@ -504,20 +438,26 @@ def tg_msg_escape_markdown_v2(t: str) -> str:
     return t
 
 def open_note(noteId: str, connected_ssh_client: paramiko.SSHClient = None):
-    if os.getenv('DEVICE_TYPE') == '0':
+    if os.getenv('TARGET_DEVICE_TYPE') == '0':
         subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}"])
-    elif os.getenv('DEVICE_TYPE') == '1':
-        ssh_stdin, ssh_stdout, ssh_stderr = connected_ssh_client.exec_command(
-            f"uiopen xhsdiscover://item/{noteId}"
-        )
+    elif os.getenv('TARGET_DEVICE_TYPE') == '1':
+        if os.getenv('LOCAL_DEVICE_TYPE') == '0':
+            ssh_stdin, ssh_stdout, ssh_stderr = connected_ssh_client.exec_command(
+                f"uiopen xhsdiscover://item/{noteId}"
+            )
+        else:
+            subprocess.run(["uiopen", f"xhsdiscover://item/{noteId}"])
 
 def home_page(connected_ssh_client: paramiko.SSHClient = None):
-    if os.getenv('DEVICE_TYPE') == '0':
+    if os.getenv('TARGET_DEVICE_TYPE') == '0':
         subprocess.run(["adb", "shell", "am", "start", "-d", "xhsdiscover://home"])
-    elif os.getenv('DEVICE_TYPE') == '1':
-        ssh_stdin, ssh_stdout, ssh_stderr = connected_ssh_client.exec_command(
-            f"uiopen xhsdiscover://home"
-        )
+    elif os.getenv('TARGET_DEVICE_TYPE') == '1':
+        if os.getenv('LOCAL_DEVICE_TYPE') == '0':
+            ssh_stdin, ssh_stdout, ssh_stderr = connected_ssh_client.exec_command(
+                "uiopen xhsdiscover://home"
+            )
+        else:
+            subprocess.run(["uiopen", "xhsdiscover://home"])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="I'm a xhsfeedbot, please send me a xhs link!")
@@ -545,7 +485,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", xhslink)[0]
         else:
             return
-    if os.getenv('DEVICE_TYPE') == '1':
+    if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(
@@ -554,7 +494,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             username=os.getenv('SSH_USERNAME'),
             password=os.getenv('SSH_PASSWORD')
         )
-    elif os.getenv('DEVICE_TYPE') == '0':
+    elif os.getenv('TARGET_DEVICE_TYPE') == '0':
         ssh = None
     open_note(noteId, ssh)
     time.sleep(3)
@@ -635,7 +575,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             raise Exception("No valid URL or Note ID found!")
 
-    if os.getenv('DEVICE_TYPE') == '1':
+    if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(
@@ -644,7 +584,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             username=os.getenv('SSH_USERNAME'),
             password=os.getenv('SSH_PASSWORD')
         )
-    elif os.getenv('DEVICE_TYPE') == '0':
+    elif os.getenv('TARGET_DEVICE_TYPE') == '0':
         ssh = None
 
     open_note(noteId, ssh)
@@ -740,72 +680,6 @@ def run_telegram_bot():
             application.shutdown()
             logging.error(f'Error! {traceback.format_exc()}')
 
-def run_mitm():
-    mitmdump(args=["-s", "xhsfeedbot.py"])
-
-def get_block_pattern_list() -> list:
-    return [
-        r'https?://fe-static.xhscdn.com/data/formula-static/hammer/patch/\S*',
-        r'https?://cdn.xiaohongshu.com/webview/\S*',
-        r'https?://infra-webview-s1.xhscdn.com/webview/\S*',
-        r'https?://apm-fe.xiaohongshu.com/api/data/\S*',
-        r'https?://apm-native.xiaohongshu.com/api/collect/?\S*',
-        r'https?://lng.xiaohongshu.com/api/collect/?\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/celestial/connect/config\S*',
-        r'https?://edith.xiaohongshu.com/api/im/users/filterUser/stranger',
-        r'https?://t\d.xiaohongshu.com/api/collect/?\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/v\d/note/metrics_report',
-        r'https?://edith.xiaohongshu.com/api/sns/v\d/system_service/flag_exp\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/v\d/system_service/config\S*',
-        r'https?://sns-avatar-qc.xhscdn.com/avatar\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/v\d/user/signoff/flow',
-        r'https?://rec.xiaohongshu.com/api/sns/v\d/followings/reddot',
-        r'https?://gslb.xiaohongshu.com/api/gslb/v\d/domainNew\S*',
-        r'https?://edith-seb.xiaohongshu.com/api/sns/v\d/system_service/config\S*',
-        r'https?://sns-na-i\d.xhscdn.com/?\S*',
-        r'https?://sns-avatar-qc.xhscdn.com/user_banner\S*',
-        r'https?://www.xiaohongshu.com/api/sns/v\d/hey\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/v\d/note/detailfeed/preload\S*',
-        r'https?://sns-na-i\d.xhscdn.com/?\S*',
-        r'https?://edith.xiaohongshu.com/api/media/v\d/upload/permit\S*',
-        r'https?://sns-na-i\d.xhscdn.com/notes_pre_post\S*',
-        r'https?://infra-app-log-\d*.cos.ap-shanghai.myqcloud.com/xhslog\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/v\d/note/video_played',
-        r'https?://edith.xiaohongshu.com/api/sns/v\d/note/widgets',
-        r'https?://ros-upload.xiaohongshu.com/bad_frame\S*',
-        r'https?://infra-app-log-\d*.cos.accelerate.myqcloud.com/xhslog\S*',
-        r'https?://mall.xiaohongshu.com/api/store/guide/components/shop_entrance\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/v\d/system_service/launch',
-        r'https?://open.kuaishouzt.com/rest/log/open/sdk/collect\S*',
-        r'https?://ci.xiaohongshu.com/icons/user\S*',
-        r'https?://picasso-static-bak.xhscdn.com/fe-platform\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/v1/system/service/ui/config\S*',
-        r'https?://apm-fe.xiaohongshu.com/api/data\S*',
-        r'https?://ci.xiaohongshu.com/1040g00831lni0o1j520g4bnb0m4mho3oa1dtrao\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/user_cache/follow/rotate\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/v1/im/get_recent_chats\S*',
-        r'https?://as.xiaohongshu.com/api/v1/profile/android\S*',
-        r'https?://edith.xiaohongshu.com/api/sns/v\d/message/detect\S*',
-        r'https?://fe-platform-i\d.xhscdn.com/platform\S*',
-        r'https?://fe-video-qc.xhscdn.com/fe-platform\S*',
-        r'https?://spider-tracker.xiaohongshu.com/api/spider\S*',
-        # r'https?://edith.xiaohongshu.com/api/sns/v\d/note/collection/list\S*',
-        # r'https?://edith.xiaohongshu.com/api/sns/v\d/user/collect_filter',
-        # r'https?://edith.xiaohongshu.com/api/sns/v\d/note/user/posted\S*',
-    ]
-
-addons = [
-    ImageFeedFilter(set_request),
-    CommentListFilter(set_request),
-    BlockURLs(get_block_pattern_list()),
-]
 
 if __name__ == "__main__":
-    multiprocessing.freeze_support()
-
-    mitm_proc = multiprocessing.Process(
-        target=run_mitm,
-    )
-    mitm_proc.start()
-
     run_telegram_bot()

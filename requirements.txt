@@ -1,6 +1,6 @@
 python-telegram-bot
 telegraph
-mitmproxy
+mitmproxy # should not installed if on jailbroken iOS
 pytz
 flask
 python-dotenv
