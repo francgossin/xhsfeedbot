@@ -39,7 +39,6 @@ if os.getenv('LOCAL_DEVICE_TYPE') == '1':
 # Load environment variables from .env file
 load_dotenv()
 
-
 logging_file = os.path.join("log", f"{datetime.now().strftime('%Y%m%d%H%M%S')}.log")
 logging.basicConfig(
     handlers=[
@@ -687,6 +686,8 @@ def run_telegram_bot():
         .read_timeout(60)\
         .write_timeout(60)\
         .media_write_timeout(300)\
+        .proxy(os.getenv('BOT_PROXY_URL'))\
+        .get_updates_proxy(os.getenv('BOT_PROXY_URL'))\
         .build()
 
     start_handler = CommandHandler("start", start)

@@ -1,4 +1,4 @@
-python-telegram-bot
+python-telegram-bot[socks]
 telegraph
 mitmproxy # should not installed if on jailbroken iOS
 pytz
@@ -7,3 +7,6 @@ python-dotenv
 requests
 paramiko
 bcrypt==4.0.1
+httpcore[asyncio]
+pip-system-certs
+tzlocal==2.1
