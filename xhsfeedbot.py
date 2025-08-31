@@ -684,9 +684,9 @@ def run_telegram_bot():
         .read_timeout(60)\
         .write_timeout(60)\
         .media_write_timeout(300)\
-        .proxy(os.getenv('BOT_PROXY_URL'))\
-        .get_updates_proxy(os.getenv('BOT_PROXY_URL'))\
         .build()
+        # .proxy(os.getenv('BOT_PROXY_URL'))\
+        # .get_updates_proxy(os.getenv('BOT_PROXY_URL'))\
 
     start_handler = CommandHandler("start", start)
     application.add_handler(start_handler)
