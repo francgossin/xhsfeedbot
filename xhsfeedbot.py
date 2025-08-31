@@ -200,7 +200,11 @@ class Note:
         html += f'<h4>👤 <a href="https://www.xiaohongshu.com/user/profile/{self.user["id"]}"> @{self.user["name"]} ({self.user["red_id"]})</a></h4>'
         html += f'<p>{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time)}</p>'
         html += f'<p>❤️ {self.liked_count} ⭐ {self.collected_count} 💬 {self.comments_count} 🔗 {self.shared_count}</p>'
-        html += f'<p>📍 {tg_msg_escape_markdown_v2(self.ip_location) if hasattr(self, 'ip_location') else 'Unknown IP Address'}</p>'
+        if hasattr(self, 'ip_location'):
+            ipaddr_html = tg_msg_escape_markdown_v2(self.ip_location)
+        else:
+            ipaddr_html = 'Unknown IP Address'
+        html += f'<p>📍 {ipaddr_html}</p>'
         html += '<br><i>via</i> <a href="https://t.me/xhsfeedbot">@xhsfeedbot</a>'
         self.html = html
         return self.html
