@@ -270,8 +270,9 @@ class Note:
             ip_html = 'Unknown IP Address'
         message += f'>📍 {ip_html}||\n\n'
         comment_tag = ''
-        if self.first_comment_tag_v2:
-            comment_tag = f'[{self.first_comment_tag_v2}]'
+        if hasattr(self, 'first_comment_tag_v2'):
+            if self.first_comment_tag_v2:
+                comment_tag = f'[{self.first_comment_tag_v2}]'
         message += self.make_block_quotation(
             f'🗨️ @{self.comment_user} {comment_tag}\n'
             f'{self.first_comment}'
