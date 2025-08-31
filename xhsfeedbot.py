@@ -195,7 +195,7 @@ class Note:
                 html += f'<video src="{img["url"]}"></video>'
         if self.video_url:
             html += f'<video src="{self.video_url}"></video>'
-        html += f'<p>{self.desc.replace('\n', '<br>')}</p>'
+        html += f'<p>{self.desc.replace('\\n', '<br>')}</p>'
         html += f'<h4>👤 <a href="https://www.xiaohongshu.com/user/profile/{self.user["id"]}"> @{self.user["name"]} ({self.user["red_id"]})</a></h4>'
         html += f'<p>{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time)}</p>'
         html += f'<p>❤️ {self.liked_count} ⭐ {self.collected_count} 💬 {self.comments_count} 🔗 {self.shared_count}</p>'
