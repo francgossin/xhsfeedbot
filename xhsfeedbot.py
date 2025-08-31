@@ -98,7 +98,6 @@ class Note:
             r' \g<tag> ',
             self.raw_desc
         )
-        self.length = len(self.desc + self.title)
         self.time = note_data['data'][0]['note_list'][0]['time']
         self.ip_location = note_data['data'][0]['note_list'][0]['ip_location']\
             if 'ip_location' in note_data['data'][0]['note_list'][0] else 'Unknown IP Address'
@@ -121,6 +120,9 @@ class Note:
             self.first_comment_tag_v2 = comment_list_data['data']['comments'][0]['show_tags_v2'][0]['text'] if comment_list_data['data']['comments'][0]['show_tags_v2'] else ''
             # self.comment_user_red_id = comment_list_data['data']['comments'][0]['user']['red_id'] if comment_list_data['data']['comments'] else '114514'
             # self.first_comment_type = comment_list_data['data']['comments'][0]['comment_type'] if comment_list_data['data']['comments'] else -1
+            self.length = len(self.desc + self.title + self.first_comment)
+        else:
+            self.length = len(self.desc + self.title)
 
         self.images_list = []
         if 'images_list' in note_data['data'][0]['note_list'][0] and 'video' not in note_data['data'][0]['note_list'][0]:
@@ -193,24 +195,27 @@ class Note:
                 html += f'<video src="{img["url"]}"></video>'
         if self.video_url:
             html += f'<video src="{self.video_url}"></video>'
-        desc_html = self.desc.replace('\\n', '<br>')
-        html += f'<p>{desc_html}</p>'
+        for lines in self.desc.split('\n'):
+            line_html = tg_msg_escape_html(lines)
+            html += f'<p>{line_html}</p>'
         html += f'<h4>👤 <a href="https://www.xiaohongshu.com/user/profile/{self.user["id"]}"> @{self.user["name"]} ({self.user["red_id"]})</a></h4>'
         html += f'<p>{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time)}</p>'
         html += f'<p>❤️ {self.liked_count} ⭐ {self.collected_count} 💬 {self.comments_count} 🔗 {self.shared_count}</p>'
         if hasattr(self, 'ip_location'):
-            ipaddr_html = tg_msg_escape_markdown_v2(self.ip_location)
+            ipaddr_html = tg_msg_escape_html(self.ip_location)
         else:
             ipaddr_html = 'Unknown IP Address'
         html += f'<p>📍 {ipaddr_html}</p>'
         html += '<br><i>via</i> <a href="https://t.me/xhsfeedbot">@xhsfeedbot</a>'
         self.html = html
+        logging.warning(f"HTML generated, \n\n{self.html}\n\n")
         return self.html
     
     def make_block_quotation(self, text: str) -> str:
-        lines = [f'> {tg_msg_escape_markdown_v2(line)}' for line in text.split('\n')]
-        lines[0] = f'**{lines[0]}'
-        lines[-1] = f'{lines[-1]}||'
+        lines = [f'>{tg_msg_escape_markdown_v2(line)}' for line in text.split('\n') if len(line) > 0 and bool(re.findall(r'\S+', line))]
+        if len(lines) > 3:
+            lines[0] = f'**{lines[0]}'
+            lines[-1] = f'{lines[-1]}||'
         return '\n'.join(lines)
 
     async def to_telegraph(self) -> str:
@@ -234,7 +239,7 @@ class Note:
         message = ''
         message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n\n'
         if preview:
-            message += f'{self.make_block_quotation(self.desc[:555] + '...')} \n\n'
+            message += f'{self.make_block_quotation(self.desc[:555] + '...')}\n\n'
             if hasattr(self, 'telegraph_url'):
                 message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n\n'
             else:
@@ -262,7 +267,7 @@ class Note:
             shared_html = tg_msg_escape_markdown_v2(self.shared_count)
         else:
             shared_html = self.shared_count
-        message += f'**>❤️ {like_html} ⭐ {collected_html} 💬 {comments_html} 🔗 {shared_html}'
+        message += f'>❤️ {like_html} ⭐ {collected_html} 💬 {comments_html} 🔗 {shared_html}'
         message += f'\n>{get_time_emoji(self.time)} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(self.time))}\n'
         if hasattr(self, 'ip_location'):
             ip_html = tg_msg_escape_markdown_v2(self.ip_location)
@@ -285,7 +290,7 @@ class Note:
     async def to_short_preview(self):
         message = ''
         message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n\n'
-        message += f'{self.make_block_quotation(self.desc[:166] + '...')} \n\n'
+        message += f'{self.make_block_quotation(self.desc[:166] + '...')}\n\n'
         if hasattr(self, 'telegraph_url'):
             message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n\n'
         else:
@@ -307,7 +312,7 @@ class Note:
             shared_html = tg_msg_escape_markdown_v2(self.shared_count)
         else:
             shared_html = self.shared_count
-        message += f'**>❤️ {like_html} ⭐ {collected_html} 💬 {comments_html} 🔗 {shared_html}'
+        message += f'>❤️ {like_html} ⭐ {collected_html} 💬 {comments_html} 🔗 {shared_html}'
         message += f'\n>{get_time_emoji(self.time)} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(self.time))}\n'
         if hasattr(self, 'ip_location'):
             ip_html = tg_msg_escape_markdown_v2(self.ip_location)
