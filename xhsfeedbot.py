@@ -234,7 +234,7 @@ class Note:
         message = ''
         message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n\n'
         if preview:
-            message += f'{self.make_block_quotation(self.desc[:555])} \\.\\.\\.\n\n'
+            message += f'{self.make_block_quotation(self.desc[:555] + '\\.\\.\\.')} \n\n'
             if hasattr(self, 'telegraph_url'):
                 message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n\n'
             else:
@@ -285,7 +285,7 @@ class Note:
     async def to_short_preview(self):
         message = ''
         message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n\n'
-        message += f'{self.make_block_quotation(self.desc[:166])} \\.\\.\\.\n\n'
+        message += f'{self.make_block_quotation(self.desc[:166] + '\\.\\.\\.')} \n\n'
         if hasattr(self, 'telegraph_url'):
             message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n\n'
         else:
