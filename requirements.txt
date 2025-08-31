@@ -5,3 +5,5 @@ pytz
 flask
 python-dotenv
 requests
+paramiko
+bcrypt==4.0.1

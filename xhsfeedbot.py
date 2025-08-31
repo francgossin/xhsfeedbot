@@ -8,6 +8,7 @@ import requests
 import traceback
 import subprocess
 import multiprocessing
+import paramiko
 from datetime import datetime, timedelta, timezone
 from pprint import pformat
 from uuid import uuid4
@@ -41,7 +42,7 @@ from mitmproxy import http
 load_dotenv()
 
 
-logging_file = f".\\log\\{datetime.now().strftime('%Y%m%d%H%M%S')}.log"
+logging_file = os.path.join("log", f"{datetime.now().strftime('%Y%m%d%H%M%S')}.log")
 logging.basicConfig(
     handlers=[
         logging.FileHandler(
@@ -75,7 +76,6 @@ def set_request(note_id:str, url: str, headers: dict, type: str) -> dict:
     )
     return {'url': url, 'headers': headers}
 
-
 class ImageFeedFilter:
     def __init__(self, callback):
         self.callback = callback
@@ -96,11 +96,10 @@ class ImageFeedFilter:
                 {k: v for k, v in flow.request.headers.items()},
                 self.type
             )
-    
-    def response(self, flow: http.HTTPFlow) -> None:
-        if self.url_pattern.search(flow.request.pretty_url):
-            flow.response.status_code = 404
-            flow.response.content = b"{\"fuckxhs\":true}"
+
+    # def response(self, flow: http.HTTPFlow) -> None:
+    #     if self.url_pattern.search(flow.request.pretty_url):
+    #         flow.response.status_code = 200
 
 class CommentListFilter(ImageFeedFilter):
     def __init__(self, callback):
@@ -138,7 +137,8 @@ class Note:
             comment_list_data: dict,
             live: bool = False,
             telegraph: bool = False,
-            inline: bool = False
+            inline: bool = False,
+            ssh_client = None,
     ) -> None:
         self.telegraph = telegraph
         logging.warning(f"Note telegraph? {self.telegraph}")
@@ -503,11 +503,21 @@ def tg_msg_escape_markdown_v2(t: str) -> str:
         t = t.replace(i, "\\" + i)
     return t
 
-def open_note(noteId: str):
-    subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}"])
+def open_note(noteId: str, connected_ssh_client: paramiko.SSHClient = None):
+    if os.getenv('DEVICE_TYPE') == '0':
+        subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}"])
+    elif os.getenv('DEVICE_TYPE') == '1':
+        ssh_stdin, ssh_stdout, ssh_stderr = connected_ssh_client.exec_command(
+            f"uiopen xhsdiscover://item/{noteId}"
+        )
 
-def home_page():
-    subprocess.run(["adb", "shell", "am", "start", "-d", "xhsdiscover://home"])
+def home_page(connected_ssh_client: paramiko.SSHClient = None):
+    if os.getenv('DEVICE_TYPE') == '0':
+        subprocess.run(["adb", "shell", "am", "start", "-d", "xhsdiscover://home"])
+    elif os.getenv('DEVICE_TYPE') == '1':
+        ssh_stdin, ssh_stdout, ssh_stderr = connected_ssh_client.exec_command(
+            f"uiopen xhsdiscover://home"
+        )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="I'm a xhsfeedbot, please send me a xhs link!")
@@ -535,30 +545,46 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", xhslink)[0]
         else:
             return
-    open_note(noteId)
-    time.sleep(0.5)
+    if os.getenv('DEVICE_TYPE') == '1':
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(
+            os.getenv('SSH_IP'),
+            port=int(os.getenv('SSH_PORT')),
+            username=os.getenv('SSH_USERNAME'),
+            password=os.getenv('SSH_PASSWORD')
+        )
+    elif os.getenv('DEVICE_TYPE') == '0':
+        ssh = None
+    open_note(noteId, ssh)
+    time.sleep(3)
 
     try:
         note_request_data = requests.get(
             f"http://127.0.0.1:5001/get_note/{noteId}"
         ).json()
-        comment_list_request_data = requests.get(
-            f"http://127.0.0.1:5001/get_comment_list/{noteId}"
-        ).json()
 
         note_data = requests.get(url=note_request_data['url'], headers=note_request_data['headers']).json()
-        with open(f".\\data\\note_data-{noteId}.json", "w", encoding='utf-8') as f:
+        with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
 
-        comment_list_data = requests.get(
-            url=comment_list_request_data['url'],
-            headers=comment_list_request_data['headers']
-        ).json()
-        with open(f".\\data\\comment_list_data-{noteId}.json", "w", encoding='utf-8') as f:
-            json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
-            f.close()
+        try:
+            comment_list_request_data = requests.get(
+                f"http://127.0.0.1:5001/get_comment_list/{noteId}"
+            ).json()
+            comment_list_data = requests.get(
+                url=comment_list_request_data['url'],
+                headers=comment_list_request_data['headers']
+            ).json()
+            with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
+                json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
+                f.close()
+        except:
+            comment_list_data = None
     except:
+        ssh.close()
+        logging.error(traceback.format_exc())
         return
 
     telegraph = bool(re.search(r" -t*(?![^ ])", update.message.text))
@@ -572,15 +598,17 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             inline=False
         )
         await note.initialize()
-        home_page()
+        home_page(ssh)
         await note.send_as_telegram_message(context.bot, update.effective_chat.id, update.message.message_id)
+        ssh.close()
     except:
-        home_page()
+        home_page(ssh)
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text="An error occurred while processing your request."
         )
-        raise Exception(traceback.format_exc())
+        ssh.close()
+        logging.error(traceback.format_exc())
 
 async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
@@ -606,23 +634,48 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", xhslink)[0]
         else:
             raise Exception("No valid URL or Note ID found!")
-    open_note(noteId)
-    time.sleep(0.5)
-    note_request_data = requests.get(
-        f"http://127.0.0.1:5001/get_note/{noteId}"
-    ).json()
-    note_data = requests.get(url=note_request_data['url'], headers=note_request_data['headers']).json()
 
-    comment_list_request_data = requests.get(
-        f"http://127.0.0.1:5001/get_comment_list/{noteId}"
-    ).json()
-    comment_list_data = requests.get(
-        url=comment_list_request_data['url'],
-        headers=comment_list_request_data['headers']
-    ).json()
-    with open(f".\\data\\comment_list_data-{noteId}.json", "w", encoding='utf-8') as f:
-        json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
-        f.close()
+    if os.getenv('DEVICE_TYPE') == '1':
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(
+            os.getenv('SSH_IP'),
+            port=int(os.getenv('SSH_PORT')),
+            username=os.getenv('SSH_USERNAME'),
+            password=os.getenv('SSH_PASSWORD')
+        )
+    elif os.getenv('DEVICE_TYPE') == '0':
+        ssh = None
+
+    open_note(noteId, ssh)
+    time.sleep(0.5)
+
+    try:
+        note_request_data = requests.get(
+            f"http://127.0.0.1:5001/get_note/{noteId}"
+        ).json()
+
+        note_data = requests.get(url=note_request_data['url'], headers=note_request_data['headers']).json()
+        with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
+            json.dump(note_data, f, indent=4, ensure_ascii=False)
+            f.close()
+
+        try:
+            comment_list_request_data = requests.get(
+                f"http://127.0.0.1:5001/get_comment_list/{noteId}"
+            ).json()
+            comment_list_data = requests.get(
+                url=comment_list_request_data['url'],
+                headers=comment_list_request_data['headers']
+            ).json()
+            with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
+                json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
+                f.close()
+        except:
+            comment_list_data = None
+    except:
+        logging.error(traceback.format_exc())
+
     telegraph = bool(re.search(r" -t*(?![^ ])", query))
     live = bool(re.search(r" -l*(?![^ ])", query))
     note = Note(
@@ -633,7 +686,8 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         inline=True,
     )
     await note.initialize()
-    home_page()
+    home_page(ssh)
+    ssh.close()
     await note.send_as_telegram_inline(context.bot, update.inline_query.id)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -722,7 +776,6 @@ def get_block_pattern_list() -> list:
         r'https?://infra-app-log-\d*.cos.accelerate.myqcloud.com/xhslog\S*',
         r'https?://mall.xiaohongshu.com/api/store/guide/components/shop_entrance\S*',
         r'https?://edith.xiaohongshu.com/api/sns/v\d/system_service/launch',
-        r'https?://spider-tracker.xiaohongshu.com/api/spider\S*',
         r'https?://open.kuaishouzt.com/rest/log/open/sdk/collect\S*',
         r'https?://ci.xiaohongshu.com/icons/user\S*',
         r'https?://picasso-static-bak.xhscdn.com/fe-platform\S*',
@@ -734,7 +787,8 @@ def get_block_pattern_list() -> list:
         r'https?://as.xiaohongshu.com/api/v1/profile/android\S*',
         r'https?://edith.xiaohongshu.com/api/sns/v\d/message/detect\S*',
         r'https?://fe-platform-i\d.xhscdn.com/platform\S*',
-        r'https?://fe-video-qc.xhscdn.com/fe-platform\S*'
+        r'https?://fe-video-qc.xhscdn.com/fe-platform\S*',
+        r'https?://spider-tracker.xiaohongshu.com/api/spider\S*',
         # r'https?://edith.xiaohongshu.com/api/sns/v\d/note/collection/list\S*',
         # r'https?://edith.xiaohongshu.com/api/sns/v\d/user/collect_filter',
         # r'https?://edith.xiaohongshu.com/api/sns/v\d/note/user/posted\S*',
@@ -743,7 +797,7 @@ def get_block_pattern_list() -> list:
 addons = [
     ImageFeedFilter(set_request),
     CommentListFilter(set_request),
-    BlockURLs(get_block_pattern_list())
+    BlockURLs(get_block_pattern_list()),
 ]
 
 if __name__ == "__main__":
