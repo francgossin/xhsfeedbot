@@ -7,8 +7,6 @@ import logging
 import requests
 import traceback
 import subprocess
-import multiprocessing
-import paramiko
 from datetime import datetime, timedelta, timezone
 from pprint import pformat
 from uuid import uuid4
@@ -34,6 +32,9 @@ from telegram import (
 )
 from telegram.constants import ParseMode
 from telegraph.aio import Telegraph
+
+if os.getenv('LOCAL_DEVICE_TYPE') == '1':
+    import paramiko
 
 # Load environment variables from .env file
 load_dotenv()
