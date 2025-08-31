@@ -1,5 +1,8 @@
 from flask import Flask, request, jsonify
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
 note_requests = {}
 comment_list_requests = {}
@@ -38,4 +41,4 @@ def get_comment_list(note_id):
     return json_data
 
 if __name__ == "__main__":
-    app.run(port=5001)
+    app.run(port=int(os.getenv("SHARED_SERVER_PORT")))

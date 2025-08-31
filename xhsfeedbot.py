@@ -7,6 +7,7 @@ import logging
 import requests
 import traceback
 import subprocess
+import paramiko
 from datetime import datetime, timedelta, timezone
 from pprint import pformat
 from uuid import uuid4
@@ -32,9 +33,6 @@ from telegram import (
 )
 from telegram.constants import ParseMode
 from telegraph.aio import Telegraph
-
-if os.getenv('LOCAL_DEVICE_TYPE') == '1':
-    import paramiko
 
 # Load environment variables from .env file
 load_dotenv()
@@ -251,7 +249,7 @@ class Note:
         if type(self.liked_count) == str:
             like_html = tg_msg_escape_markdown_v2(self.liked_count)
         else:
-            like_html = self.liked_count
+            like_html = str(self.liked_count)
         if type(self.collected_count) == str:
             collected_html = tg_msg_escape_markdown_v2(self.collected_count)
         else:
@@ -264,7 +262,7 @@ class Note:
             shared_html = tg_msg_escape_markdown_v2(self.shared_count)
         else:
             shared_html = self.shared_count
-        message += '**>❤️ ' + like_html +' ⭐ ' + collected_html + ' 💬 ' + comments_html + ' 🔗 ' + shared_html
+        message += f'**>❤️ {like_html} ⭐ {collected_html} 💬 {comments_html} 🔗 {shared_html}'
         message += f'\n>{get_time_emoji(self.time)} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(self.time))}\n'
         if hasattr(self, 'ip_location'):
             ip_html = tg_msg_escape_markdown_v2(self.ip_location)
@@ -308,7 +306,7 @@ class Note:
             shared_html = tg_msg_escape_markdown_v2(self.shared_count)
         else:
             shared_html = self.shared_count
-        message += '**>❤️ ' + like_html +' ⭐ ' + collected_html + ' 💬 ' + comments_html + ' 🔗 ' + shared_html
+        message += f'**>❤️ {like_html} ⭐ {collected_html} 💬 {comments_html} 🔗 {shared_html}'
         message += f'\n>{get_time_emoji(self.time)} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(self.time))}\n'
         if hasattr(self, 'ip_location'):
             ip_html = tg_msg_escape_markdown_v2(self.ip_location)
