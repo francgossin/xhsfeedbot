@@ -268,7 +268,7 @@ class Note:
             ip_html = tg_msg_escape_markdown_v2(self.ip_location)
         else:
             ip_html = 'Unknown IP Address'
-        message += f'>📍 {ip_html}||\n\n'
+        message += f'>📍 {ip_html}\n\n'
         comment_tag = ''
         if hasattr(self, 'first_comment_tag_v2'):
             if self.first_comment_tag_v2:
@@ -313,7 +313,7 @@ class Note:
             ip_html = tg_msg_escape_markdown_v2(self.ip_location)
         else:
             ip_html = 'Unknown IP Address'
-        message += f'>📍 {ip_html}||'
+        message += f'>📍 {ip_html}'
         message += '\n_via_ @xhsfeedbot'
         self.short_preview = message
         logging.warning(f"Short preview generated, {self.short_preview}")
