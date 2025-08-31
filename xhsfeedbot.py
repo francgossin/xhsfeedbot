@@ -248,17 +248,29 @@ class Note:
             elif self.telegraph:
                 message += f'📝 [Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n\n'
         message += f'[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n\n'
-        message += f'**>❤️ {
-            tg_msg_escape_markdown_v2(self.liked_count) if type(self.liked_count) == str else self.liked_count
-        } ⭐ {
-            tg_msg_escape_markdown_v2(self.collected_count) if type(self.collected_count) == str else self.collected_count
-        } 💬 {
-            tg_msg_escape_markdown_v2(self.comments_count) if type(self.comments_count) == str else self.comments_count
-        } 🔗 {
-            tg_msg_escape_markdown_v2(self.shared_count) if type(self.shared_count) == str else self.shared_count
-        }'
+        if type(self.liked_count) == str:
+            like_html = tg_msg_escape_markdown_v2(self.liked_count)
+        else:
+            like_html = self.liked_count
+        if type(self.collected_count) == str:
+            collected_html = tg_msg_escape_markdown_v2(self.collected_count)
+        else:
+            collected_html = self.collected_count
+        if type(self.comments_count) == str:
+            comments_html = tg_msg_escape_markdown_v2(self.comments_count)
+        else:
+            comments_html = self.comments_count
+        if type(self.shared_count) == str:
+            shared_html = tg_msg_escape_markdown_v2(self.shared_count)
+        else:
+            shared_html = self.shared_count
+        message += '**>❤️ ' + like_html +' ⭐ ' + collected_html + ' 💬 ' + comments_html + ' 🔗 ' + shared_html
         message += f'\n>{get_time_emoji(self.time)} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(self.time))}\n'
-        message += f'>📍 {tg_msg_escape_markdown_v2(self.ip_location) if hasattr(self, 'ip_location') else 'Unknown IP Address'}||\n\n'
+        if hasattr(self, 'ip_location'):
+            ip_html = tg_msg_escape_markdown_v2(self.ip_location)
+        else:
+            ip_html = 'Unknown IP Address'
+        message += f'>📍 {ip_html}||\n\n'
         message += self.make_block_quotation(
             f'🗨️ @{self.comment_user} {f'[{self.first_comment_tag_v2}]' if self.first_comment_tag_v2 else ''}\n'
             f'{self.first_comment}'
@@ -277,17 +289,29 @@ class Note:
         else:
             message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n\n'
         message += f'[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n\n'
-        message += f'**>❤️ {
-            tg_msg_escape_markdown_v2(self.liked_count) if type(self.liked_count) == str else self.liked_count
-        } 💬 {
-            tg_msg_escape_markdown_v2(self.comments_count) if type(self.comments_count) == str else self.comments_count
-        } 🔗 {
-            tg_msg_escape_markdown_v2(self.shared_count) if type(self.shared_count) == str else self.shared_count
-        } 💬 {
-            tg_msg_escape_markdown_v2(self.comments_count) if type(self.comments_count) == str else self.comments_count
-        }'
+        if type(self.liked_count) == str:
+            like_html = tg_msg_escape_markdown_v2(self.liked_count)
+        else:
+            like_html = self.liked_count
+        if type(self.collected_count) == str:
+            collected_html = tg_msg_escape_markdown_v2(self.collected_count)
+        else:
+            collected_html = self.collected_count
+        if type(self.comments_count) == str:
+            comments_html = tg_msg_escape_markdown_v2(self.comments_count)
+        else:
+            comments_html = self.comments_count
+        if type(self.shared_count) == str:
+            shared_html = tg_msg_escape_markdown_v2(self.shared_count)
+        else:
+            shared_html = self.shared_count
+        message += '**>❤️ ' + like_html +' ⭐ ' + collected_html + ' 💬 ' + comments_html + ' 🔗 ' + shared_html
         message += f'\n>{get_time_emoji(self.time)} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(self.time))}\n'
-        message += f'>📍 {tg_msg_escape_markdown_v2(self.ip_location) if hasattr(self, 'ip_location') else 'Unknown IP Address'}||'
+        if hasattr(self, 'ip_location'):
+            ip_html = tg_msg_escape_markdown_v2(self.ip_location)
+        else:
+            ip_html = 'Unknown IP Address'
+        message += f'>📍 {ip_html}||'
         message += '\n_via_ @xhsfeedbot'
         self.short_preview = message
         logging.warning(f"Short preview generated, {self.short_preview}")
