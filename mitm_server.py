@@ -1,6 +1,7 @@
+import re
+import requests
 from mitmproxy.tools.main import mitmdump
 from mitmproxy import http
-
 
 def set_request(note_id:str, url: str, headers: dict, type: str) -> dict:
     if note_id is None:
