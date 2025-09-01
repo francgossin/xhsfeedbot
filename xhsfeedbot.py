@@ -70,12 +70,13 @@ class Note:
             live: bool = False,
             telegraph: bool = False,
             inline: bool = False,
-            ssh_client = None,
     ) -> None:
         self.telegraph = telegraph
         logging.warning(f"Note telegraph? {self.telegraph}")
         self.inline = inline
         logging.warning(f"Note inline? {self.inline}")
+        self.live = live
+        logging.warning(f"Note live? {self.live}")
         if not note_data['data']:
             raise Exception("Note data not found!")
         self.user = {
@@ -126,7 +127,6 @@ class Note:
 
         self.images_list = []
         if 'images_list' in note_data['data'][0]['note_list'][0] and 'video' not in note_data['data'][0]['note_list'][0]:
-            self.images_list = []
             for each in note_data['data'][0]['note_list'][0]['images_list']:
                 self.images_list.append(
                     {
@@ -135,16 +135,17 @@ class Note:
                         'thumbnail': remove_image_url_params(each['url_multi_level']['low'])
                     }
                 )
-                if 'live_photo' in each and live:
+                if 'live_photo' in each and self.live:
+                    logging.warning(f'live photo found in {each}')
+                    live_urls = []
                     for s in each['live_photo']['media']['stream']:
-                        live_urls = []
                         if each['live_photo']['media']['stream'][s]:
                             for ss in each['live_photo']['media']['stream'][s]:
                                 live_urls.append(remove_image_url_params(ss['master_url']))
-                        if len(live_urls) > 0:
-                            self.images_list.append(
-                                {'live': True, 'url': remove_image_url_params(live_urls[0]), 'thumbnail': remove_image_url_params(each['original'])}
-                            )
+                    if len(live_urls) > 0:
+                        self.images_list.append(
+                            {'live': True, 'url': remove_image_url_params(live_urls[0]), 'thumbnail': remove_image_url_params(each['url'])}
+                        )
         logging.warning(f"Images found: {self.images_list}")
         self.video_url = ''
         if 'video' in note_data['data'][0]['note_list'][0]:
@@ -324,7 +325,7 @@ class Note:
         logging.warning(f"Short preview generated, {self.short_preview}")
         return message
 
-    async def to_media_group(self, inline: bool):
+    async def to_media_group(self, inline: bool) -> list:
         if inline:
             if not self.short_preview:
                 self.short_preview = await self.to_short_preview()
@@ -563,8 +564,8 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(traceback.format_exc())
         return
 
-    telegraph = bool(re.search(r" -t*(?![^ ])", update.message.text))
-    live = bool(re.search(r" -l*(?![^ ])", update.message.text))
+    telegraph = bool(re.search(r"[^\S]+-t(?!\S)", update.message.text))
+    live = bool(re.search(r"[^\S]+-l(?!\S)", update.message.text))
     try:
         note = Note(
             note_data,
@@ -651,9 +652,11 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             comment_list_data = None
     except:
         logging.error(traceback.format_exc())
+        raise Exception(traceback.format_exc())
 
-    telegraph = bool(re.search(r" -t*(?![^ ])", query))
-    live = bool(re.search(r" -l*(?![^ ])", query))
+    telegraph = bool(re.search(r"[^\S]+-t(?!\S)", query))
+    logging.warning(f'query is {query}')
+    live = bool(re.search(r"[^\S]+-l(?!\S)", query))
     note = Note(
         note_data,
         comment_list_data=comment_list_data,
