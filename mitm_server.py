@@ -1,7 +1,7 @@
 import re
 import requests
 from mitmproxy.tools.main import mitmdump
-from mitmproxy import http
+from mitmproxy import http, ctx
 from urllib.parse import parse_qs, urlparse
 
 def set_request(note_id:str, url: str, headers: dict, type: str) -> dict:
@@ -65,6 +65,9 @@ class BlockURLs:
         if [True for pattern in self.block_pattern_list if re.findall(pattern, flow.request.pretty_url)]:
             flow.response.status_code = 345
             flow.response.content = b"{'fuckxhs': true}"
+            view = ctx.master.addons.get("view")
+            if view.store_count() >= 10:
+                view.clear()
 
 def get_block_pattern_list() -> list:
     return [
