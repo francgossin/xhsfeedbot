@@ -2,7 +2,7 @@ import os
 import re
 import json
 import time
-import asyncio
+import asyncio # type: ignore
 import logging
 import requests
 import traceback
@@ -13,6 +13,7 @@ from pprint import pformat
 from uuid import uuid4
 from dotenv import load_dotenv
 from urllib.parse import unquote, urljoin, parse_qs, urlparse
+from typing import Any
 
 from telegram.ext import (
     filters,
@@ -28,12 +29,11 @@ from telegram import (
     MessageEntity,
     InputMediaPhoto,
     InputMediaVideo,
-    InputMediaDocument,
     InlineQueryResultPhoto,
     InlineQueryResultVideo
 )
 from telegram.constants import ParseMode
-from telegraph.aio import Telegraph
+from telegraph.aio import Telegraph # type: ignore
 
 # Load environment variables from .env file
 load_dotenv()
@@ -66,8 +66,8 @@ def replace_redemoji_with_emoji(text: str) -> str:
 class Note:
     def __init__(
             self,
-            note_data: dict,
-            comment_list_data: dict,
+            note_data: dict[str, list[dict[str, Any]]],
+            comment_list_data: dict[str, list[dict[str, Any]]],
             live: bool = False,
             telegraph: bool = False,
             inline: bool = False,
@@ -80,7 +80,7 @@ class Note:
         logging.warning(f"Note live? {self.live}")
         if not note_data['data']:
             raise Exception("Note data not found!")
-        self.user = {
+        self.user: dict[str, str | int] = {
             'id': note_data['data'][0]['user']['id'],
             'name': note_data['data'][0]['user']['name'],
             'red_id': note_data['data'][0]['user']['red_id'],
@@ -90,8 +90,8 @@ class Note:
         }
         # self.text_language_code = note_data['data'][0]['note_list'][0]['text_language_code']
 
-        self.title = note_data['data'][0]['note_list'][0]['title'] if note_data['data'][0]['note_list'][0]['title'] else f"Untitled Note by @{self.user['name']} ({self.user['red_id']})"
-        self.type = note_data['data'][0]['note_list'][0]['type']
+        self.title: str = note_data['data'][0]['note_list'][0]['title'] if note_data['data'][0]['note_list'][0]['title'] else f"Untitled Note by @{self.user['name']} ({self.user['red_id']})"
+        self.type: str = note_data['data'][0]['note_list'][0]['type']
 
         self.raw_desc = replace_redemoji_with_emoji(note_data['data'][0]['note_list'][0]['desc'])
         logging.warning(f"Note raw_desc\n\n {self.raw_desc}")
@@ -237,22 +237,22 @@ class Note:
         logging.warning(f"Generated Telegraph URL: {self.telegraph_url}")
         return self.telegraph_url
 
-    async def to_telegram_message(self, preview=False) -> str:
+    async def to_telegram_message(self, preview: bool = False) -> str:
         message = ''
         message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n\n'
         if preview:
-            message += f'{self.make_block_quotation(self.desc[:555] + '...')}\n\n'
+            message += f'{self.make_block_quotation(self.desc[:555] + '...')}\n\n\n'
             if hasattr(self, 'telegraph_url'):
                 message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n\n'
             else:
                 message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n\n'
         else:
-            message += f'{self.make_block_quotation(self.desc)}\n\n'
+            message += f'{self.make_block_quotation(self.desc)}\n\n\n'
             if hasattr(self, 'telegraph_url'):
                 message += f'📝 [Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n\n'
             elif self.telegraph:
                 message += f'📝 [Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n\n'
-        message += f'[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n\n'
+        message += f'[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n'
         if type(self.liked_count) == str:
             like_html = tg_msg_escape_markdown_v2(self.liked_count)
         else:
@@ -406,7 +406,7 @@ class Note:
                     await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
-                        media=[InputMediaDocument(requests.get(p.media).content) if type(p.media) == str else p for p in part],
+                        media=[InputMediaPhoto(requests.get(p.media).content) if type(p.media) == str and 'imageView' in p else InputMediaVideo(requests.get(p.media).content) if type(p.media) == str else p for p in part],
                     )
             else:
                 try:
@@ -426,7 +426,7 @@ class Note:
                     await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
-                        media=[InputMediaDocument(requests.get(p.media).content) if type(p.media) == str else p for p in part],
+                        media=[InputMediaPhoto(requests.get(p.media).content) if type(p.media) == str and 'imageView' in p else InputMediaVideo(requests.get(p.media).content) if type(p.media) == str else p for p in part],
                         caption=self.message if hasattr(
                             self,
                             'message'
