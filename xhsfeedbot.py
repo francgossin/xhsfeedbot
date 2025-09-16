@@ -28,6 +28,7 @@ from telegram import (
     MessageEntity,
     InputMediaPhoto,
     InputMediaVideo,
+    InputMediaDocument,
     InlineQueryResultPhoto,
     InlineQueryResultVideo
 )
@@ -141,10 +142,10 @@ class Note:
                     for s in each['live_photo']['media']['stream']:
                         if each['live_photo']['media']['stream'][s]:
                             for ss in each['live_photo']['media']['stream'][s]:
-                                live_urls.append(remove_image_url_params(ss['master_url']))
+                                live_urls.append(ss['backup_urls'][0] if ss['backup_urls'] else ss['master_url'])
                     if len(live_urls) > 0:
                         self.images_list.append(
-                            {'live': True, 'url': remove_image_url_params(live_urls[0]), 'thumbnail': remove_image_url_params(each['url'])}
+                            {'live': True, 'url': live_urls[0], 'thumbnail': remove_image_url_params(each['url'])}
                         )
         logging.warning(f"Images found: {self.images_list}")
         self.video_url = ''
@@ -405,7 +406,7 @@ class Note:
                     await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
-                        media=[requests.get(p).content for p in part],
+                        media=[InputMediaDocument(requests.get(p.media).content) if type(p.media) == str else p for p in part],
                     )
             else:
                 try:
@@ -425,7 +426,7 @@ class Note:
                     await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
-                        media=[requests.get(p).content for p in part],
+                        media=[InputMediaDocument(requests.get(p.media).content) if type(p.media) == str else p for p in part],
                         caption=self.message if hasattr(
                             self,
                             'message'
@@ -434,7 +435,6 @@ class Note:
                         ),
                         parse_mode=ParseMode.MARKDOWN_V2,
                     )
-
 
     async def send_as_telegram_inline(self, bot: Bot, inline_query_id: str):
         await bot.answer_inline_query(
