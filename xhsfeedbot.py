@@ -406,7 +406,7 @@ class Note:
                     await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
-                        media=[InputMediaPhoto(requests.get(p.media).content) if type(p.media) == str and 'imageView' in p else InputMediaVideo(requests.get(p.media).content) if type(p.media) == str else p for p in part],
+                        media=[InputMediaPhoto(requests.get(p.media).content) if type(p.media) == str and 'imageView' in p.media else InputMediaVideo(requests.get(p.media).content) if type(p.media) == str else p for p in part],
                     )
             else:
                 try:
@@ -426,7 +426,7 @@ class Note:
                     await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
-                        media=[InputMediaPhoto(requests.get(p.media).content) if type(p.media) == str and 'imageView' in p else InputMediaVideo(requests.get(p.media).content) if type(p.media) == str else p for p in part],
+                        media=[InputMediaPhoto(requests.get(p.media).content) if type(p.media) == str and 'imageView' in p.media else InputMediaVideo(requests.get(p.media).content) if type(p.media) == str else p for p in part],
                         caption=self.message if hasattr(
                             self,
                             'message'
