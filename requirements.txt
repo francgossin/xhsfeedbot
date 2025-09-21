@@ -1,4 +1,4 @@
-python-telegram-bot
+python-telegram-bot[socks]
 telegraph
 mitmproxy # should not installed if on jailbroken iOS
 pytz

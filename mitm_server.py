@@ -1,17 +1,16 @@
 import re
 import requests
-from mitmproxy.tools.main import mitmdump
+from mitmproxy.tools.main import mitmdump # type: ignore
 from mitmproxy import http, ctx
 from urllib.parse import parse_qs, urlparse
+from typing import Any
 
-def set_request(note_id:str, url: str, headers: dict, type: str) -> dict:
-    if note_id is None:
-        return {}
+def set_request(note_id:str, url: str, data: dict, type: str) -> dict[str, Any]:
     requests.post(
         f"http://127.0.0.1:5001/set_{type}",
-        json={"note_id": note_id, "url": url, "headers": headers}
+        json={"note_id": note_id, "url": url, "data": data}
     )
-    return {'url': url, 'headers': headers}
+    return {"note_id": note_id, "url": url, "data": data}
 
 class ImageFeedFilter:
     def __init__(self, callback):
@@ -23,20 +22,23 @@ class ImageFeedFilter:
         parsed_url = urlparse(url)
         query_params = parse_qs(parsed_url.query)
         note_id = query_params.get('note_id', [None])[0]
+        if note_id is None:
+            raise ValueError("note_id not found in URL")
         return note_id
 
-    def request(self, flow: http.HTTPFlow) -> None:
-        if self.url_pattern.search(flow.request.pretty_url):
+    def response(self, flow: http.HTTPFlow) -> None:
+        if re.findall(self.url_pattern, flow.request.pretty_url):
+            data = flow.response
+            if data is not None:
+                json_data = data.json()
+            else:
+                json_data = {}
             self.callback(
-                self.get_note_id(flow.request.pretty_url),
-                flow.request.pretty_url,
-                {k: v for k, v in flow.request.headers.items()},
-                self.type
+                note_id=self.get_note_id(flow.request.pretty_url),
+                url=flow.request.pretty_url,
+                data=json_data,
+                type=self.type
             )
-
-    # def response(self, flow: http.HTTPFlow) -> None:
-    #     if self.url_pattern.search(flow.request.pretty_url):
-    #         flow.response.status_code = 200
 
 class CommentListFilter(ImageFeedFilter):
     def __init__(self, callback):
@@ -44,17 +46,19 @@ class CommentListFilter(ImageFeedFilter):
         self.url_pattern = re.compile(r'https?://edith.xiaohongshu.com/api/sns/v\d+/note/comment/list')
         self.type = 'comment_list'
 
-    def request(self, flow: http.HTTPFlow) -> None:
-        if self.url_pattern.search(flow.request.pretty_url):
-            self.callback(
-                self.get_note_id(flow.request.pretty_url),
-                flow.request.pretty_url,
-                {k: v for k, v in flow.request.headers.items()},
-                self.type
-            )
-
     def response(self, flow: http.HTTPFlow) -> None:
-        pass
+        if re.findall(self.url_pattern, flow.request.pretty_url):
+            data = flow.response
+            if data is not None:
+                json_data = data.json()
+            else:
+                json_data = {}
+            self.callback(
+                note_id=self.get_note_id(flow.request.pretty_url),
+                url=flow.request.pretty_url,
+                data=json_data,
+                type=self.type
+            )
 
 
 class BlockURLs:
@@ -69,7 +73,7 @@ class BlockURLs:
             if view.store_count() >= 10:
                 view.clear()
 
-def get_block_pattern_list() -> list:
+def get_block_pattern_list() -> list[str]:
     return [
         r'https?://fe-static.xhscdn.com/data/formula-static/hammer/patch/\S*',
         r'https?://cdn.xiaohongshu.com/webview/\S*',

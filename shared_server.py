@@ -14,7 +14,7 @@ def set_note():
     print(note_id, data["url"])
     note_requests[note_id] = {
         "url": data["url"],
-        "headers": data["headers"]
+        "data": data["data"]
     }
     return jsonify({"status": "ok"})
 
@@ -24,7 +24,7 @@ def set_comment_list():
     note_id = data["note_id"]
     comment_list_requests[note_id] = {
         "url": data["url"],
-        "headers": data["headers"]
+        "data": data["data"]
     }
     return jsonify({"status": "ok"})
 

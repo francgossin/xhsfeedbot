@@ -507,7 +507,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif re.findall(r"[a-z0-9]{24}", update.message.text) and not re.findall(r"user/profile/[a-z0-9]{24}", update.message.text):
         noteId = re.findall(r"[a-z0-9]{24}", update.message.text)[0]
     else:
-        xhslink = urls[0]
+        xhslink = [u for u in urls if 'xhslink.com' in u][0]
         logging.warning(f"URL found: {xhslink}")
         redirectPath = get_redirected_url(xhslink)
         if re.findall(r"https?://(?:www.)?xhslink.com/[a-z]/[A-Za-z0-9]+", xhslink):
@@ -537,22 +537,16 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time.sleep(3)
 
     try:
-        note_request_data = requests.get(
+        note_data = requests.get(
             f"http://127.0.0.1:5001/get_note/{noteId}"
         ).json()
-
-        note_data = requests.get(url=note_request_data['url'], headers=note_request_data['headers']).json()
         with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
 
         try:
-            comment_list_request_data = requests.get(
-                f"http://127.0.0.1:5001/get_comment_list/{noteId}"
-            ).json()
             comment_list_data = requests.get(
-                url=comment_list_request_data['url'],
-                headers=comment_list_request_data['headers']
+                f"http://127.0.0.1:5001/get_comment_list/{noteId}"
             ).json()
             with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
                 json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
@@ -568,8 +562,8 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     live = bool(re.search(r"[^\S]+-l(?!\S)", update.message.text))
     try:
         note = Note(
-            note_data,
-            comment_list_data=comment_list_data,
+            note_data['data'],
+            comment_list_data=comment_list_data['data'],
             live=live,
             telegraph=telegraph,
             inline=False
@@ -586,88 +580,6 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         ssh.close()
         logging.error(traceback.format_exc())
-
-async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.inline_query.query
-    if not query:
-        return
-    urls = re.findall(r"((?:[a-zA-Z0-9]+?:\/\/)?[a-zA-Z0-9_-]+\.[a-zA-Z0-9_/-]+)", query)
-    if len(urls) == 0 and not re.findall(r"[a-z0-9]{24}", query):
-        return
-    elif re.findall(r"[a-z0-9]{24}", query) and not re.findall(r"user/profile/[a-z0-9]{24}", query):
-        noteId = re.findall(r"[a-z0-9]{24}", query)[0]
-    else:
-        xhslink = urls[0]
-        redirectPath = get_redirected_url(xhslink)
-        if re.findall(r"https?://(?:www.)?xhslink.com/[a-z]/[A-Za-z0-9]+", xhslink):
-            clean_url = get_clean_url(redirectPath)
-            if 'xiaohongshu.com/404' not in redirectPath:
-                noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_url)[0]
-            else:
-                noteId = re.findall(r"noteId=([a-z0-9]+)", redirectPath)[0]
-        elif re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/[0-9a-z]+", xhslink):
-            noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", xhslink)[0]
-        elif re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", query):
-            noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", xhslink)[0]
-        else:
-            raise Exception("No valid URL or Note ID found!")
-
-    if os.getenv('TARGET_DEVICE_TYPE') == '1' and os.getenv('LOCAL_DEVICE_TYPE') != '1':
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(
-            os.getenv('SSH_IP'),
-            port=int(os.getenv('SSH_PORT')),
-            username=os.getenv('SSH_USERNAME'),
-            password=os.getenv('SSH_PASSWORD')
-        )
-    elif os.getenv('TARGET_DEVICE_TYPE') == '0':
-        ssh = None
-
-    open_note(noteId, ssh)
-    time.sleep(0.5)
-
-    try:
-        note_request_data = requests.get(
-            f"http://127.0.0.1:5001/get_note/{noteId}"
-        ).json()
-
-        note_data = requests.get(url=note_request_data['url'], headers=note_request_data['headers']).json()
-        with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
-            json.dump(note_data, f, indent=4, ensure_ascii=False)
-            f.close()
-
-        try:
-            comment_list_request_data = requests.get(
-                f"http://127.0.0.1:5001/get_comment_list/{noteId}"
-            ).json()
-            comment_list_data = requests.get(
-                url=comment_list_request_data['url'],
-                headers=comment_list_request_data['headers']
-            ).json()
-            with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
-                json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
-                f.close()
-        except:
-            comment_list_data = None
-    except:
-        logging.error(traceback.format_exc())
-        raise Exception(traceback.format_exc())
-
-    telegraph = bool(re.search(r"[^\S]+-t(?!\S)", query))
-    logging.warning(f'query is {query}')
-    live = bool(re.search(r"[^\S]+-l(?!\S)", query))
-    note = Note(
-        note_data,
-        comment_list_data=comment_list_data,
-        live=live,
-        telegraph=telegraph,
-        inline=True,
-    )
-    await note.initialize()
-    home_page(ssh)
-    ssh.close()
-    await note.send_as_telegram_inline(context.bot, update.inline_query.id)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     global logging_file
@@ -701,9 +613,6 @@ def run_telegram_bot():
     application.add_handler(start_handler)
 
     application.add_error_handler(error_handler)
-
-    inline_note2feed_handler = InlineQueryHandler(inline_note2feed)
-    application.add_handler(inline_note2feed_handler)
 
     note2feed_handler = MessageHandler(
         filters.TEXT & (
