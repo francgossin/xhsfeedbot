@@ -88,6 +88,8 @@ with open('redtoemoji.json', 'r', encoding='utf-8') as f:
     redtoemoji = json.load(f)
     f.close()
 
+URL_REGEX = r"""(?i)\b((?:https?:(?:/{1,3}|[a-z0-9%])|[a-z0-9.\-]+[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)/)(?:[^\s()<>{}\[\]]+|\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\))+(?:\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\)|[^\s`!()\[\]{};:\'\".,<>?«»“”‘’])|(?:(?<!@)[a-z0-9]+(?:[.\-][a-z0-9]+)*[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)\b/?(?!@)))"""
+
 def replace_redemoji_with_emoji(text: str) -> str:
     for red_emoji, emoji in redtoemoji.items():
         text = text.replace(red_emoji, emoji)
@@ -101,13 +103,12 @@ class Note:
             live: bool = False,
             telegraph: bool = False,
             inline: bool = False,
+            with_xsec_token: bool = False,
+            original_xsec_token: str = ''
     ) -> None:
         self.telegraph = telegraph
-        bot_logger.debug(f"Note telegraph? {self.telegraph}")
         self.inline = inline
-        bot_logger.debug(f"Note inline? {self.inline}")
         self.live = live
-        bot_logger.debug(f"Note live? {self.live}")
         if not note_data['data']:
             raise Exception("Note data not found!")
         self.user: dict[str, str | int] = {
@@ -182,15 +183,24 @@ class Note:
         if 'video' in note_data['data'][0]['note_list'][0]:
             self.video_url = note_data['data'][0]['note_list'][0]['video']['url']
             self.video_thumbnail = note_data['data'][0]['note_list'][0]['images_list'][0]['url_multi_level']['low']
-        self.url = get_clean_url(note_data['data'][0]['note_list'][0]['share_info']['link'])
-        self.noteId = re.findall(r"[a-z0-9]{24}", self.url)[0]
         if telegraph:
             self.to_html()
         tgmsg_result = self.to_telegram_message(preview=bool(self.length >= 666))
         bot_logger.debug(f"tgmsg_result: {tgmsg_result}\nlen: {self.length}, preview? = {bool(self.length >= 666)}")
         media_group_result = self.to_media_group(inline=self.inline)
         bot_logger.debug(f"media_group_result: {media_group_result}")
-    
+
+        self.url = get_clean_url(note_data['data'][0]['note_list'][0]['share_info']['link'])
+        self.with_xsec_token = with_xsec_token
+        if with_xsec_token:
+            if not original_xsec_token:
+                parsed_url = urlparse(str(note_data['data'][0]['note_list'][0]['share_info']['link']))
+                self.xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
+            else:
+                self.xsec_token = original_xsec_token
+            self.url += f"?xsec_token={self.xsec_token}"
+        self.noteId = re.findall(r"[a-z0-9]{24}", self.url)[0]
+
     async def initialize(self) -> None:
         if self.telegraph:
             await self.to_telegraph()
@@ -215,7 +225,7 @@ class Note:
             'video_url': getattr(self, 'video_url', ''),
             'url': self.url,
         }
-    
+
     def to_html(self) -> str:
         html = ''
         html += f'<h3>『<a href="{self.url}">{self.title}</a>』</h3>'
@@ -482,7 +492,7 @@ def get_time_emoji(timestamp: int) -> str:
 def convert_timestamp_to_timestr(timestamp: int) -> str:
     utc_dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
     utc_plus_8 = utc_dt + timedelta(hours=8)
-    return utc_plus_8.strftime('%Y-%m-%d %H:%M:%S UTC+0800')
+    return utc_plus_8.strftime('%Y-%m-%d %H:%M:%S')
 
 def remove_image_url_params(url: str) -> str:
     for k, v in parse_qs(url).items():
@@ -530,30 +540,46 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat:
-        await context.bot.send_message(chat_id=chat.id, text="""Usage:\nsend xhslink[.]com or xiaohongshu[.]com note link to @xhsfeedbot (support link without xsec_token).\nParameters:\n-l  Output media group with live photo.\n-t  Output with Telegraph page.""")
+        await context.bot.send_message(chat_id=chat.id, text="""Usage:\nsend xhslink[.]com or xiaohongshu[.]com note link to @xhsfeedbot (support link without xsec_token).\nParameters:\n-l  Output media group with live photo.\n-t  Output with Telegraph page.\n-x  Note link with xsec_token.""")
 
 async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text if update.message and update.message.text is not None else ""
-    urls = re.findall(r"((?:[a-zA-Z0-9]+?:\/\/)?[a-zA-Z0-9_-]+\.[a-zA-Z0-9_/-]+)", message_text)
+    xsec_token = ''
+    urls = re.findall(URL_REGEX, message_text)
+    bot_logger.info(f'URLs:\n{urls}')
     if len(urls) == 0:
         bot_logger.debug("NO URL FOUND!")
         return
     elif re.findall(r"[a-z0-9]{24}", message_text) and not re.findall(r"user/profile/[a-z0-9]{24}", message_text):
         noteId = re.findall(r"[a-z0-9]{24}", message_text)[0]
+        note_url = [u for u in urls if re.findall(r"[a-z0-9]{24}", u) and not re.findall(r"user/profile/[a-z0-9]{24}", u)][0]
+        parsed_url = urlparse(str(note_url))
+        if 'xsec_token' in parse_qs(parsed_url.query):
+            xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
     elif 'xhslink.com' in message_text or 'xiaohongshu.com' in message_text:
         xhslink = [u for u in urls if 'xhslink.com' in u][0]
         bot_logger.debug(f"URL found: {xhslink}")
         redirectPath = get_redirected_url(xhslink)
         if re.findall(r"https?://(?:www.)?xhslink.com/[a-z]/[A-Za-z0-9]+", xhslink):
             clean_url = get_clean_url(redirectPath)
-            if 'xiaohongshu.com/404' not in redirectPath:
+            if 'xiaohongshu.com/404' not in redirectPath or 'xiaohongshu.com/login' not in redirectPath:
                 noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_url)[0]
             else:
                 noteId = re.findall(r"noteId=([a-z0-9]+)", redirectPath)[0]
+                redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
+            parsed_url = urlparse(str(redirectPath))
+            if 'xsec_token' in parse_qs(parsed_url.query):
+                xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
         elif re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/[0-9a-z]+", xhslink):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", xhslink)[0]
+            parsed_url = urlparse(str(xhslink))
+            if 'xsec_token' in parse_qs(parsed_url.query):
+                xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
         elif re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", message_text):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", xhslink)[0]
+            parsed_url = urlparse(str(xhslink))
+            if 'xsec_token' in parse_qs(parsed_url.query):
+                xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
         else:
             return
     else:
@@ -611,6 +637,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     telegraph = bool(re.search(r"[^\S]+-t(?!\S)", message_text))
     live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
     msg = update.message
     if not msg:
         return
@@ -623,7 +650,9 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             comment_list_data=comment_list_data['data'],
             live=live,
             telegraph=telegraph,
-            inline=False
+            inline=False,
+            with_xsec_token=with_xsec_token,
+            original_xsec_token=xsec_token
         )
         await note.initialize()
         home_page(ssh)
@@ -641,26 +670,42 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text if update.message and update.message.text is not None else ""
-    urls = re.findall(r"((?:[a-zA-Z0-9]+?:\/\/)?[a-zA-Z0-9_-]+\.[a-zA-Z0-9_/-]+)", message_text)
+    xsec_token = ''
+    urls = re.findall(URL_REGEX, message_text)
+    bot_logger.info(f'URLs:\n{urls}')
     if len(urls) == 0:
         bot_logger.debug("NO URL FOUND!")
         return
     elif re.findall(r"[a-z0-9]{24}", message_text) and not re.findall(r"user/profile/[a-z0-9]{24}", message_text):
         noteId = re.findall(r"[a-z0-9]{24}", message_text)[0]
+        note_url = [u for u in urls if re.findall(r"[a-z0-9]{24}", u) and not re.findall(r"user/profile/[a-z0-9]{24}", u)][0]
+        parsed_url = urlparse(str(note_url))
+        if 'xsec_token' in parse_qs(parsed_url.query):
+            xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
     elif 'xhslink.com' in message_text or 'xiaohongshu.com' in message_text:
         xhslink = [u for u in urls if 'xhslink.com' in u][0]
         bot_logger.debug(f"URL found: {xhslink}")
         redirectPath = get_redirected_url(xhslink)
         if re.findall(r"https?://(?:www.)?xhslink.com/[a-z]/[A-Za-z0-9]+", xhslink):
             clean_url = get_clean_url(redirectPath)
-            if 'xiaohongshu.com/404' not in redirectPath:
+            if 'xiaohongshu.com/404' not in redirectPath or 'xiaohongshu.com/login' not in redirectPath:
                 noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_url)[0]
             else:
                 noteId = re.findall(r"noteId=([a-z0-9]+)", redirectPath)[0]
+                redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
+            parsed_url = urlparse(str(redirectPath))
+            if 'xsec_token' in parse_qs(parsed_url.query):
+                xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
         elif re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/[0-9a-z]+", xhslink):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", xhslink)[0]
+            parsed_url = urlparse(str(xhslink))
+            if 'xsec_token' in parse_qs(parsed_url.query):
+                xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
         elif re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", message_text):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", xhslink)[0]
+            parsed_url = urlparse(str(xhslink))
+            if 'xsec_token' in parse_qs(parsed_url.query):
+                xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
         else:
             return
     else:
@@ -716,6 +761,7 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
     msg = update.message
     if not msg:
         return
@@ -728,7 +774,9 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
             comment_list_data=comment_list_data['data'],
             live=live,
             telegraph=True,
-            inline=False
+            inline=False,
+            with_xsec_token=with_xsec_token,
+            original_xsec_token=xsec_token
         )
         await note.initialize()
         home_page(ssh)
