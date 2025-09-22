@@ -539,7 +539,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat:
-        await context.bot.send_message(chat_id=chat.id, text="""Usage:\nsend xhslink[.]com or xiaohongshu[.]com note link to @xhsfeedbot (support link without xsec_token).\nParameters:\n-l  Output media group with live photo.\n-t  Output with Telegraph page.\n-x  Note link with xsec_token.""")
+        help_msg = """*Usage*
+send `xhslink\\[\\.\\]com` or `xiaohongshu\\[\\.\\]com` note link to @xhsfeedbot
+Link without `xsec_token` parameter is supported\\.
+
+*Parameters*
+`\\-l`  Output media group with live photo\\.
+`\\-t`  Output with Telegraph page\\.
+`\\-x`  Note link with `xsec_token`\\.
+
+*Commands*
+`/start` \\- Start chat with @xhsfeedbot\\.
+`/help` \\- Show this help message\\.
+`/note` \\- Forward note to Telegram message or Telegraph\\.
+`/telegraph` \\- Forward note to Telegraph\\."""
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=help_msg,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
 
 async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text if update.message and update.message.text is not None else ""
