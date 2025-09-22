@@ -179,17 +179,6 @@ class Note:
                             {'live': 'True', 'url': live_urls[0], 'thumbnail': remove_image_url_params(each['url'])}
                         )
         bot_logger.debug(f"Images found: {self.images_list}")
-        self.video_url = ''
-        if 'video' in note_data['data'][0]['note_list'][0]:
-            self.video_url = note_data['data'][0]['note_list'][0]['video']['url']
-            self.video_thumbnail = note_data['data'][0]['note_list'][0]['images_list'][0]['url_multi_level']['low']
-        if telegraph:
-            self.to_html()
-        tgmsg_result = self.to_telegram_message(preview=bool(self.length >= 666))
-        bot_logger.debug(f"tgmsg_result: {tgmsg_result}\nlen: {self.length}, preview? = {bool(self.length >= 666)}")
-        media_group_result = self.to_media_group(inline=self.inline)
-        bot_logger.debug(f"media_group_result: {media_group_result}")
-
         self.url = get_clean_url(note_data['data'][0]['note_list'][0]['share_info']['link'])
         self.with_xsec_token = with_xsec_token
         if with_xsec_token:
@@ -200,6 +189,16 @@ class Note:
                 self.xsec_token = original_xsec_token
             self.url += f"?xsec_token={self.xsec_token}"
         self.noteId = re.findall(r"[a-z0-9]{24}", self.url)[0]
+        self.video_url = ''
+        if 'video' in note_data['data'][0]['note_list'][0]:
+            self.video_url = note_data['data'][0]['note_list'][0]['video']['url']
+            self.video_thumbnail = note_data['data'][0]['note_list'][0]['images_list'][0]['url_multi_level']['low']
+        if telegraph:
+            self.to_html()
+        tgmsg_result = self.to_telegram_message(preview=bool(self.length >= 666))
+        bot_logger.debug(f"tgmsg_result: {tgmsg_result}\nlen: {self.length}, preview? = {bool(self.length >= 666)}")
+        media_group_result = self.to_media_group(inline=self.inline)
+        bot_logger.debug(f"media_group_result: {media_group_result}")
 
     async def initialize(self) -> None:
         if self.telegraph:
