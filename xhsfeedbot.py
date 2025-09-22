@@ -3,6 +3,7 @@ import re
 import json
 import time
 import asyncio # type: ignore
+import random
 import logging
 import requests
 import traceback
@@ -96,7 +97,7 @@ class Note:
     def __init__(
             self,
             note_data: dict[str, Any],
-            comment_list_data: dict[str, Any] | None,
+            comment_list_data: dict[str, Any],
             live: bool = False,
             telegraph: bool = False,
             inline: bool = False,
@@ -138,21 +139,21 @@ class Note:
         self.liked_count = note_data['data'][0]['note_list'][0]['liked_count']
         # self.last_update_time = note_data['data'][0]['note_list'][0]['last_update_time']
 
-        if comment_list_data:
-            self.first_comment = replace_redemoji_with_emoji(
-                comment_list_data['data']['comments'][0]['content'] if comment_list_data['data']['comments'] else ''
-            )
+        nonblank_comments_index = [c for c in range(len(comment_list_data['data']['comments'])) if comment_list_data['data']['comments'][c]['content']]
+        if nonblank_comments_index:
+            comment_index = nonblank_comments_index[0]
         else:
-            self.first_comment = ''
-        if self.first_comment and comment_list_data:
-            self.first_comment = re.sub(
-                r'#(?P<tag_text>\S+?)\[搜索高亮\]#',
-                r'\g<tag_text>',
-                self.first_comment
-            )
-            self.comment_user = comment_list_data['data']['comments'][0]['user']['nickname'] if comment_list_data['data']['comments'] else ''
-            self.first_comment_tag_v2 = comment_list_data['data']['comments'][0]['show_tags_v2'][0]['text'] if comment_list_data['data']['comments'][0]['show_tags_v2'] else ''
-
+            comment_index = random.choice(nonblank_comments_index)
+        self.first_comment = replace_redemoji_with_emoji(
+            comment_list_data['data']['comments'][comment_index]['content']
+        )
+        self.first_comment = re.sub(
+            r'#(?P<tag_text>\S+?)\[搜索高亮\]#',
+            r'\g<tag_text>',
+            self.first_comment
+        )
+        self.comment_user = comment_list_data['data']['comments'][comment_index]['user']['nickname'] if comment_list_data['data']['comments'] else ''
+        self.first_comment_tag_v2 = comment_list_data['data']['comments'][comment_index]['show_tags_v2'][0]['text'] if comment_list_data['data']['comments'][comment_index]['show_tags_v2'] else ''
         self.length = len(self.desc + self.title + self.first_comment)
 
         self.images_list: list[dict[str, str]] = []
@@ -576,7 +577,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ssh = None
     bot_logger.debug('try open note on device')
     open_note(noteId, ssh)
-    time.sleep(0.7)
+    time.sleep(0.75)
 
     try:
         note_data = requests.get(
@@ -585,16 +586,23 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
-
-        try:
-            comment_list_data = requests.get(
-                f"http://127.0.0.1:5001/get_comment_list/{noteId}"
-            ).json()
-            with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
-                json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
-                f.close()
-        except:
-            comment_list_data = None
+        times = 0
+        while True:
+            times += 1
+            try:
+                comment_list_data = requests.get(
+                    f"http://127.0.0.1:5001/get_comment_list/{noteId}"
+                ).json()
+                with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
+                    json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
+                    f.close()
+                bot_logger.debug('got comment list data')
+                break
+            except:
+                if times <= 3:
+                    time.sleep(0.1)
+                else:
+                    raise Exception('error when getting comment list data')
     except:
         if ssh:
             ssh.close()
@@ -612,7 +620,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         note = Note(
             note_data['data'],
-            comment_list_data=comment_list_data['data'] if comment_list_data else None,
+            comment_list_data=comment_list_data['data'],
             live=live,
             telegraph=telegraph,
             inline=False
@@ -675,7 +683,7 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         ssh = None
     open_note(noteId, ssh)
-    time.sleep(0.7)
+    time.sleep(0.75)
 
     try:
         note_data = requests.get(
@@ -684,16 +692,23 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
-
-        try:
-            comment_list_data = requests.get(
-                f"http://127.0.0.1:5001/get_comment_list/{noteId}"
-            ).json()
-            with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
-                json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
-                f.close()
-        except:
-            comment_list_data = None
+        times = 0
+        while True:
+            times += 1
+            try:
+                comment_list_data = requests.get(
+                    f"http://127.0.0.1:5001/get_comment_list/{noteId}"
+                ).json()
+                with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
+                    json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
+                    f.close()
+                bot_logger.debug('got comment list data')
+                break
+            except:
+                if times <= 3:
+                    time.sleep(0.1)
+                else:
+                    raise Exception('error when getting comment list data')
     except:
         if ssh:
             ssh.close()
@@ -710,7 +725,7 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         note = Note(
             note_data['data'],
-            comment_list_data=comment_list_data['data'] if comment_list_data else None,
+            comment_list_data=comment_list_data['data'],
             live=live,
             telegraph=True,
             inline=False
