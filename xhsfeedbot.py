@@ -139,22 +139,23 @@ class Note:
         self.shared_count = note_data['data'][0]['note_list'][0]['shared_count']
         self.liked_count = note_data['data'][0]['note_list'][0]['liked_count']
         # self.last_update_time = note_data['data'][0]['note_list'][0]['last_update_time']
-
-        nonblank_comments_index = [c for c in range(len(comment_list_data['data']['comments'])) if comment_list_data['data']['comments'][c]['content']]
-        if nonblank_comments_index:
-            comment_index = nonblank_comments_index[0]
-        else:
-            comment_index = random.choice(nonblank_comments_index)
-        self.first_comment = replace_redemoji_with_emoji(
-            comment_list_data['data']['comments'][comment_index]['content']
-        )
-        self.first_comment = re.sub(
-            r'#(?P<tag_text>\S+?)\[搜索高亮\]#',
-            r'\g<tag_text>',
-            self.first_comment
-        )
-        self.comment_user = comment_list_data['data']['comments'][comment_index]['user']['nickname'] if comment_list_data['data']['comments'] else ''
-        self.first_comment_tag_v2 = comment_list_data['data']['comments'][comment_index]['show_tags_v2'][0]['text'] if comment_list_data['data']['comments'][comment_index]['show_tags_v2'] else ''
+        self.first_comment = ''
+        if int(self.comments_count):
+            nonblank_comments_index = [c for c in range(len(comment_list_data['data']['comments'])) if comment_list_data['data']['comments'][c]['content']]
+            if nonblank_comments_index:
+                comment_index = nonblank_comments_index[0]
+            else:
+                comment_index = random.choice(nonblank_comments_index)
+            self.first_comment = replace_redemoji_with_emoji(
+                comment_list_data['data']['comments'][comment_index]['content']
+            )
+            self.first_comment = re.sub(
+                r'#(?P<tag_text>\S+?)\[搜索高亮\]#',
+                r'\g<tag_text>',
+                self.first_comment
+            )
+            self.comment_user = comment_list_data['data']['comments'][comment_index]['user']['nickname'] if comment_list_data['data']['comments'] else ''
+            self.first_comment_tag_v2 = comment_list_data['data']['comments'][comment_index]['show_tags_v2'][0]['text'] if comment_list_data['data']['comments'][comment_index]['show_tags_v2'] else ''
         self.length = len(self.desc + self.title + self.first_comment)
 
         self.images_list: list[dict[str, str]] = []
@@ -314,7 +315,7 @@ class Note:
             ip_html = tg_msg_escape_markdown_v2(self.ip_location)
         else:
             ip_html = 'Unknown IP Address'
-        message += f'>📍 {ip_html}\n\n'
+        message += f'>📍 {ip_html}\n'
         comment_tag = ''
         if hasattr(self, 'first_comment_tag_v2'):
             if self.first_comment_tag_v2:
