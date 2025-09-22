@@ -1,8 +1,8 @@
-python-telegram-bot[socks]
-telegraph
-mitmproxy # should not installed if on jailbroken iOS
-pytz
-flask
-python-dotenv
-requests
-paramiko
+python-telegram-bot[socks] == 22.4
+telegraph == 2.2.0
+mitmproxy == 12.1.2 # should not installed if on jailbroken iOS
+pytz == 2025.2
+flask == 3.1.2
+python-dotenv == 1.1.1
+requests == 2.32.5
+paramiko == 4.0.0

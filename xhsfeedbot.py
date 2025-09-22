@@ -513,7 +513,7 @@ def open_note(noteId: str, connected_ssh_client: paramiko.SSHClient | None = Non
     if os.getenv('TARGET_DEVICE_TYPE') == '0':
         subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}"])
     elif os.getenv('TARGET_DEVICE_TYPE') == '1':
-        if os.getenv('LOCAL_DEVICE_TYPE') == '0' and connected_ssh_client:
+        if connected_ssh_client:
             _, _, _ = connected_ssh_client.exec_command(
                 f"uiopen xhsdiscover://item/{noteId}"
             )
@@ -524,7 +524,7 @@ def home_page(connected_ssh_client: paramiko.SSHClient | None = None):
     if os.getenv('TARGET_DEVICE_TYPE') == '0':
         subprocess.run(["adb", "shell", "am", "start", "-d", "xhsdiscover://home"])
     elif os.getenv('TARGET_DEVICE_TYPE') == '1':
-        if os.getenv('LOCAL_DEVICE_TYPE') == '0' and connected_ssh_client:
+        if connected_ssh_client:
             _, _, _ = connected_ssh_client.exec_command(
                 "uiopen xhsdiscover://home"
             )
@@ -601,7 +601,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     else:
         return
-    if os.getenv('TARGET_DEVICE_TYPE') == '1' and os.getenv('LOCAL_DEVICE_TYPE') != '1':
+    if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh_ip = os.getenv('SSH_IP')
@@ -727,7 +727,7 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     else:
         return
-    if os.getenv('TARGET_DEVICE_TYPE') == '1' and os.getenv('LOCAL_DEVICE_TYPE') != '1':
+    if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh_ip = os.getenv('SSH_IP')
