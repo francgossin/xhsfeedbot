@@ -36,7 +36,7 @@ A bot that forward REDNote to Telegram Message or Telegraph
 ## Deployment guide
 
 ### Server side
-Download [platform-tools](https://developer.android.com/tools/releases/platform-tools) and add `adb` to `PATH` if you are using a Android device.
+Download [platform-tools](https://developer.android.com/tools/releases/platform-tools) and add `adb` to `PATH` if you are using an Android device.
 
 ```bash
 git clone https://github.com/francgossin/xhsfeedbot.git
