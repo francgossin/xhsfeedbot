@@ -84,7 +84,7 @@ class Note:
             'id': note_data['data'][0]['user']['id'],
             'name': note_data['data'][0]['user']['name'],
             'red_id': note_data['data'][0]['user']['red_id'],
-            # 'image': note_data['data'][0]['user']['image'],
+            'image': note_data['data'][0]['user']['image'],
             # 'nickname': note_data['data'][0]['user']['nickname'],
             # 'userid': note_data['data'][0]['user']['userid'],
         }
@@ -201,6 +201,7 @@ class Note:
             line_html = tg_msg_escape_html(lines)
             html += f'<p>{line_html}</p>'
         html += f'<h4>👤 <a href="https://www.xiaohongshu.com/user/profile/{self.user["id"]}"> @{self.user["name"]} ({self.user["red_id"]})</a></h4>'
+        html += f'<img src="{self.user["image"]}"></img>'
         html += f'<p>{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time)}</p>'
         html += f'<p>❤️ {self.liked_count} ⭐ {self.collected_count} 💬 {self.comments_count} 🔗 {self.shared_count}</p>'
         if hasattr(self, 'ip_location'):
@@ -239,20 +240,20 @@ class Note:
 
     async def to_telegram_message(self, preview: bool = False) -> str:
         message = ''
-        message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n\n'
+        message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n'
         if preview:
-            message += f'{self.make_block_quotation(self.desc[:555] + '...')}\n\n\n'
+            message += f'{self.make_block_quotation(self.desc[:555] + '...')}\n\n'
             if hasattr(self, 'telegraph_url'):
-                message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n\n'
+                message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n'
             else:
-                message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n\n'
+                message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n'
         else:
-            message += f'{self.make_block_quotation(self.desc)}\n\n\n'
+            message += f'{self.make_block_quotation(self.desc)}\n'
             if hasattr(self, 'telegraph_url'):
-                message += f'📝 [Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n\n'
+                message += f'📝 [Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n'
             elif self.telegraph:
-                message += f'📝 [Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n\n'
-        message += f'[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n'
+                message += f'📝 [Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n'
+        message += f'\n[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n'
         if type(self.liked_count) == str:
             like_html = tg_msg_escape_markdown_v2(self.liked_count)
         else:
@@ -291,12 +292,12 @@ class Note:
 
     async def to_short_preview(self):
         message = ''
-        message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n\n'
-        message += f'{self.make_block_quotation(self.desc[:166] + '...')}\n\n'
+        message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n'
+        message += f'{self.make_block_quotation(self.desc[:166] + '...')}\n'
         if hasattr(self, 'telegraph_url'):
-            message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n\n'
+            message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n'
         else:
-            message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n\n'
+            message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n'
         message += f'[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n\n'
         if type(self.liked_count) == str:
             like_html = tg_msg_escape_markdown_v2(self.liked_count)
@@ -435,13 +436,6 @@ class Note:
                         ),
                         parse_mode=ParseMode.MARKDOWN_V2,
                     )
-
-    async def send_as_telegram_inline(self, bot: Bot, inline_query_id: str):
-        await bot.answer_inline_query(
-            inline_query_id=inline_query_id,
-            results=self.inline_medien if hasattr(self, 'inline_medien') else await self.to_media_group(inline=True),
-            cache_time=0
-        )
 
 def get_redirected_url(url: str) -> str:
     return unquote(requests.get(url if 'http' in url else f'http://{url}').url.split("redirectPath=")[-1])
@@ -599,37 +593,41 @@ def run_telegram_bot():
     bot_token = os.getenv('BOT_TOKEN')
     if not bot_token:
         raise ValueError("BOT_TOKEN environment variable is required")
-    
     application = ApplicationBuilder()\
         .token(bot_token)\
         .read_timeout(60)\
         .write_timeout(60)\
         .media_write_timeout(300)\
         .build()
-        # .proxy(os.getenv('BOT_PROXY_URL'))\
-        # .get_updates_proxy(os.getenv('BOT_PROXY_URL'))\
-
-    start_handler = CommandHandler("start", start)
-    application.add_handler(start_handler)
-
-    application.add_error_handler(error_handler)
-
-    note2feed_handler = MessageHandler(
-        filters.TEXT & (
-            filters.Entity(MessageEntity.URL) |
-            filters.Entity(MessageEntity.TEXT_LINK)
-        ),
-        note2feed
-    )
-    application.add_handler(note2feed_handler)
-
+    
     while 1:
         try:
+            start_handler = CommandHandler("start", start)
+            application.add_handler(start_handler)
+
+            application.add_error_handler(error_handler)
+
+            note2feed_handler = MessageHandler(
+                filters.TEXT & (
+                    filters.Entity(MessageEntity.URL) |
+                    filters.Entity(MessageEntity.TEXT_LINK)
+                ),
+                note2feed
+            )
+            application.add_handler(note2feed_handler)
             application.run_polling()
         except:
-            application.shutdown()
-            logging.error(f'Error! {traceback.format_exc()}')
+            shutdown_result = application.shutdown()
+            logging.error(f'Error! shutdown:{shutdown_result}\n{traceback.format_exc()}')
+            del shutdown_result
+            del application
 
+            application = ApplicationBuilder()\
+                .token(bot_token)\
+                .read_timeout(60)\
+                .write_timeout(60)\
+                .media_write_timeout(300)\
+                .build()
 
 if __name__ == "__main__":
     run_telegram_bot()
