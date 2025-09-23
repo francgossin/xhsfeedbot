@@ -561,6 +561,12 @@ Link without `xsec_token` parameter is supported\\.
         )
 
 async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg:
+        return
+    chat = update.effective_chat
+    if not chat:
+        return
     message_text = update.message.text if update.message and update.message.text is not None else ""
     xsec_token = ''
     urls = re.findall(URL_REGEX, message_text)
@@ -578,13 +584,22 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         xhslink = [u for u in urls if 'xhslink.com' in u][0]
         bot_logger.debug(f"URL found: {xhslink}")
         redirectPath = get_redirected_url(xhslink)
+        bot_logger.debug(f"Redirected URL: {redirectPath}")
         if re.findall(r"https?://(?:www.)?xhslink.com/[a-z]/[A-Za-z0-9]+", xhslink):
             clean_url = get_clean_url(redirectPath)
-            if 'xiaohongshu.com/404' not in redirectPath or 'xiaohongshu.com/login' not in redirectPath:
-                noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_url)[0]
-            else:
+            if 'xiaohongshu.com/404' in redirectPath or 'xiaohongshu.com/login' in redirectPath:
                 noteId = re.findall(r"noteId=([a-z0-9]+)", redirectPath)[0]
-                redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
+                if 'redirectPath=' in redirectPath:
+                    redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
+                else:
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=f"The note `{noteId}` is not available now or the link is invalid\\.",
+                        parse_mode=ParseMode.MARKDOWN_V2
+                    )
+                    return
+            else:
+                noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_url)[0]
             parsed_url = urlparse(str(redirectPath))
             if 'xsec_token' in parse_qs(parsed_url.query):
                 xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
@@ -602,6 +617,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     else:
         return
+    bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}')
     if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -656,12 +672,6 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegraph = bool(re.search(r"[^\S]+-t(?!\S)", message_text))
     live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
     with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
-    msg = update.message
-    if not msg:
-        return
-    chat = update.effective_chat
-    if not chat:
-        return
     try:
         note = Note(
             note_data['data'],
@@ -687,6 +697,12 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ssh.close()
 
 async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg:
+        return
+    chat = update.effective_chat
+    if not chat:
+        return
     message_text = update.message.text if update.message and update.message.text is not None else ""
     xsec_token = ''
     urls = re.findall(URL_REGEX, message_text)
@@ -704,16 +720,21 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
         xhslink = [u for u in urls if 'xhslink.com' in u][0]
         bot_logger.debug(f"URL found: {xhslink}")
         redirectPath = get_redirected_url(xhslink)
+        bot_logger.debug(f"Redirected URL: {redirectPath}")
         if re.findall(r"https?://(?:www.)?xhslink.com/[a-z]/[A-Za-z0-9]+", xhslink):
-            clean_url = get_clean_url(redirectPath)
-            if 'xiaohongshu.com/404' not in redirectPath or 'xiaohongshu.com/login' not in redirectPath:
-                noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_url)[0]
-            else:
+            if 'xiaohongshu.com/404' in redirectPath or 'xiaohongshu.com/login' in redirectPath:
                 noteId = re.findall(r"noteId=([a-z0-9]+)", redirectPath)[0]
-                redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
-            parsed_url = urlparse(str(redirectPath))
-            if 'xsec_token' in parse_qs(parsed_url.query):
-                xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
+                if 'redirectPath=' in redirectPath:
+                    redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
+                else:
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=f"The note `{noteId}` is not available now or the link is invalid\\.",
+                        parse_mode=ParseMode.MARKDOWN_V2
+                    )
+                    return
+            else:
+                noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", redirectPath)[0]
         elif re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/[0-9a-z]+", xhslink):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", xhslink)[0]
             parsed_url = urlparse(str(xhslink))
@@ -728,6 +749,7 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     else:
         return
+    bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}')
     if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -780,12 +802,6 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
     with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
-    msg = update.message
-    if not msg:
-        return
-    chat = update.effective_chat
-    if not chat:
-        return
     try:
         note = Note(
             note_data['data'],
