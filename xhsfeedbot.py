@@ -34,6 +34,9 @@ from telegram import (
     LinkPreviewOptions,
     InlineQueryResultArticle,
 )
+from telegram.error import (
+    NetworkError,
+)
 from telegram.constants import ParseMode
 from telegraph.aio import Telegraph # type: ignore
 
@@ -483,45 +486,6 @@ def home_page(connected_ssh_client: paramiko.SSHClient | None = None):
         else:
             subprocess.run(["uiopen", "xhsdiscover://home"])
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    if chat:
-        await context.bot.send_message(chat_id=chat.id, text="I'm xhsfeedbot, please send me a xhs link!\n/help for more info.")
-
-async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    if chat:
-        help_msg = """*Usage*
-send `xhslink\\[\\.\\]com` or `xiaohongshu\\[\\.\\]com` note link to @xhsfeedbot
-Link without `xsec_token` parameter is supported\\.
-Telegraph link without media group as default output\\.
-
-*Parameters*
-`\\-l`  Output Telegram message media group and Telegraph media with live photo video\\.
-`\\-x`  Note link with `xsec_token`\\.
-`\\-m`  Output note media and content as direct Telegram messages \\(may consume more time\\)\\.
-
-*Inline mode*
-Use `@xhsfeedbot <note link>` in any chat to get a short preview of the note\\.
-`\\-m` parameter is not supported in inline mode\\.
-
-*Commands*
-`/start` \\- Start chat with @xhsfeedbot\\.
-`/help` \\- Show this help message\\.
-`/note` \\- Forward note to Telegraph or Telegram message \\(with `-m` parameter\\)\\.
-
-*Note*
-Group privacy is on\\. You need to send command to bot manually or add bot as admin in group chat\\.
-
-Due to referer policy of images and videos of `xiaohongshu\\[\\.\\]com`, media in Telegraph may not work sometimes in browser\\.
-
-If you really need to view Telegraph outside Telegram Instant View, addons like [this on Firefox](https://addons.mozilla.org/firefox/addon/togglereferrer/) may help\\."""
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=help_msg,
-            parse_mode=ParseMode.MARKDOWN_V2,
-            disable_web_page_preview=True
-        )
 def get_url_info(message_text: str) -> dict[str, str | bool]:
     xsec_token = ''
     urls = re.findall(URL_REGEX, message_text)
@@ -569,6 +533,45 @@ def get_url_info(message_text: str) -> dict[str, str | bool]:
         return {'success': False, 'msg': 'Invalid URL or the note is no longer available.', 'noteId': '', 'xsec_token': ''}
     return {'success': True, 'msg': 'Success.', 'noteId': noteId, 'xsec_token': xsec_token}
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat:
+        await context.bot.send_message(chat_id=chat.id, text="I'm xhsfeedbot, please send me a xhs link!\n/help for more info.")
+
+async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat:
+        help_msg = """*Usage*
+send `xhslink\\[\\.\\]com` or `xiaohongshu\\[\\.\\]com` note link to @xhsfeedbot
+Link without `xsec_token` parameter is supported\\.
+Telegraph link without media group as default output\\.
+
+*Parameters*
+`\\-l`  Output Telegram message media group and Telegraph media with live photo video\\.
+`\\-x`  Note link with `xsec_token`\\.
+`\\-m`  Output note media and content as direct Telegram messages \\(may consume more time\\)\\.
+
+*Inline mode*
+Use `@xhsfeedbot <note link>` in any chat to get a short preview of the note\\.
+`\\-m` parameter is not supported in inline mode\\.
+
+*Commands*
+`/start` \\- Start chat with @xhsfeedbot\\.
+`/help` \\- Show this help message\\.
+`/note` \\- Forward note to Telegraph or Telegram message \\(with `-m` parameter\\)\\.
+
+*Note*
+Group privacy is on\\. You need to send command to bot manually or add bot as admin in group chat\\.
+
+Due to referer policy of images and videos of `xiaohongshu\\[\\.\\]com`, media in Telegraph may not work sometimes in browser\\.
+
+If you really need to view Telegraph outside Telegram Instant View, addons like [this on Firefox](https://addons.mozilla.org/firefox/addon/togglereferrer/) may help\\."""
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=help_msg,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=True
+        )
 
 async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -797,7 +800,8 @@ async def error_handler(update: Update | object, context: ContextTypes.DEFAULT_T
         )
         bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n send message ok\n\n{traceback.format_exc()}")
     except Exception:
-        bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n try shutdown\nsend message also error:\n\n{traceback.format_exc()}")
+        bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n try shutdown\nsend message also error:\n\n{traceback.format_exc()}\n\n SCRIPT WILL QUIT NOW")
+        os._exit(os.EX_TEMPFAIL)
 
 def run_telegram_bot():
     bot_token = os.getenv('BOT_TOKEN')
@@ -836,8 +840,14 @@ def run_telegram_bot():
     except KeyboardInterrupt:
         shutdown_result = application.shutdown()
         bot_logger.debug(f'KeyboardInterrupt received, shutdown:{shutdown_result}')
-        exit(0)
+        os._exit(os.EX_OK)
+    except NetworkError:
+        bot_logger.error(f'NetworkError, probably no internet connection, script will quit now.\n{traceback.format_exc()}')
+        os._exit(os.EX_TEMPFAIL)
 
 if __name__ == "__main__":
-    while 1:
+    try:
         run_telegram_bot()
+    except Exception as _:
+        bot_logger.error(f'Unexpected error:\n{traceback.format_exc()}\n\n SCRIPT WILL QUIT NOW')
+        os._exit(os.EX_TEMPFAIL)
