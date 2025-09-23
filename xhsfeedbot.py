@@ -11,26 +11,28 @@ import subprocess
 import paramiko
 from datetime import datetime, timedelta, timezone
 from pprint import pformat
-from uuid import uuid4
 from dotenv import load_dotenv
 from urllib.parse import unquote, urljoin, parse_qs, urlparse
 from typing import Any
+from uuid import uuid4
 
 from telegram.ext import (
     filters,
     MessageHandler,
     ApplicationBuilder,
     CommandHandler,
-    ContextTypes
+    ContextTypes,
+    InlineQueryHandler
 )
 from telegram import (
+    InputTextMessageContent,
     Update,
     Bot,
     MessageEntity,
     InputMediaPhoto,
     InputMediaVideo,
-    InlineQueryResultPhoto,
-    InlineQueryResultVideo
+    LinkPreviewOptions,
+    InlineQueryResultArticle,
 )
 from telegram.constants import ParseMode
 from telegraph.aio import Telegraph # type: ignore
@@ -102,12 +104,11 @@ class Note:
             comment_list_data: dict[str, Any],
             live: bool = False,
             telegraph: bool = False,
-            inline: bool = False,
             with_xsec_token: bool = False,
-            original_xsec_token: str = ''
+            original_xsec_token: str = '',
+            with_full_data: bool = False,
     ) -> None:
         self.telegraph = telegraph
-        self.inline = inline
         self.live = live
         if not note_data['data']:
             raise Exception("Note data not found!")
@@ -140,7 +141,7 @@ class Note:
         self.liked_count = note_data['data'][0]['note_list'][0]['liked_count']
         # self.last_update_time = note_data['data'][0]['note_list'][0]['last_update_time']
         self.first_comment = ''
-        if int(self.comments_count):
+        if int(self.comments_count) and comment_list_data:
             nonblank_comments_index = [c for c in range(len(comment_list_data['data']['comments'])) if comment_list_data['data']['comments'][c]['content']]
             if nonblank_comments_index:
                 comment_index = nonblank_comments_index[0]
@@ -198,15 +199,13 @@ class Note:
             self.to_html()
         tgmsg_result = self.to_telegram_message(preview=bool(self.length >= 666))
         bot_logger.debug(f"tgmsg_result: {tgmsg_result}\nlen: {self.length}, preview? = {bool(self.length >= 666)}")
-        media_group_result = self.to_media_group(inline=self.inline)
+        media_group_result = self.to_media_group()
         bot_logger.debug(f"media_group_result: {media_group_result}")
 
     async def initialize(self) -> None:
         if self.telegraph:
             await self.to_telegraph()
         self.short_preview = ''
-        if self.inline:
-            await self.to_short_preview()
 
     def to_dict(self) -> dict[str, str | int | Any]:
         return {
@@ -268,7 +267,7 @@ class Note:
             short_name='@xhsfeed',
         )
         response = await telegraph.create_page( # type: ignore
-            title=self.title if self.title else f"Note by @{self.user['name']} ({self.user['red_id']})",
+            title=f"{self.title if self.title else f"Note"} @{self.user['name']}",
             author_name=f'@xhsfeed',
             author_url=f"https://t.me/xhsfeed",
             html_content=self.html,
@@ -366,78 +365,30 @@ class Note:
         bot_logger.debug(f"Short preview generated, {self.short_preview}")
         return message
 
-    async def to_media_group(self, inline: bool) -> list[InlineQueryResultPhoto | InlineQueryResultVideo] | list[list[InputMediaPhoto | InputMediaVideo]]:
-        if inline:
-            if not self.short_preview:
-                self.short_preview = await self.to_short_preview()
-            self.inline_medien: list[InlineQueryResultPhoto | InlineQueryResultVideo] = []
-            for n, imgs in enumerate(self.images_list):
-                if not imgs['live']:
-                    self.inline_medien.append(
-                            InlineQueryResultPhoto(
-                                id=str(uuid4()),
-                                photo_url=imgs['url'],
-                                thumbnail_url=imgs['url'],
-                                title=f"Photo {n + 1}",
-                                description=f"{self.title}",
-                                caption=self.short_preview,
-                                parse_mode=ParseMode.MARKDOWN_V2
-                        )
-                    )
-                else:
-                    self.inline_medien.append(
-                        InlineQueryResultVideo(
-                            id=str(uuid4()),
-                            video_url=imgs['url'],
-                            mime_type="video/mp4",
-                            thumbnail_url=imgs['thumbnail'],
-                            title=f"Live Photo {n + 1}",
-                            description=f"{self.title}",
-                            caption=self.short_preview,
-                            parse_mode=ParseMode.MARKDOWN_V2
-                        )
-                    )
-            if self.video_url:
-                self.inline_medien.append(
-                    InlineQueryResultVideo(
-                        id=str(uuid4()),
-                        video_url=self.video_url,
-                        mime_type="video/mp4",
-                        title=f"Video",
-                        description=f"{self.title}",
-                        thumbnail_url=self.video_thumbnail,
-                        caption=self.short_preview,
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                    )
-                )
-            return self.inline_medien
-        else:
-            self.medien: list[InputMediaPhoto | InputMediaVideo] = []
-            for n, imgs in enumerate(self.images_list):
-                if not imgs['live']:
-                    self.medien.append(
-                            InputMediaPhoto(imgs['url'])
-                    )
-                else:
-                    self.medien.append(
-                        InputMediaVideo(
-                            requests.get(imgs['url']).content
-                        )
-                    )
-            if self.video_url:
+    async def to_media_group(self) -> list[list[InputMediaPhoto | InputMediaVideo]]:
+        self.medien: list[InputMediaPhoto | InputMediaVideo] = []
+        for _, imgs in enumerate(self.images_list):
+            if not imgs['live']:
                 self.medien.append(
-                    InputMediaVideo(requests.get(self.video_url).content)
+                        InputMediaPhoto(imgs['url'])
                 )
-            self.medien_parts = [self.medien[i:i + 10] for i in range(0, len(self.medien), 10)]
-            return self.medien_parts
+            else:
+                self.medien.append(
+                    InputMediaVideo(
+                        requests.get(imgs['url']).content
+                    )
+                )
+        if self.video_url:
+            self.medien.append(
+                InputMediaVideo(requests.get(self.video_url).content)
+            )
+        self.medien_parts = [self.medien[i:i + 10] for i in range(0, len(self.medien), 10)]
+        return self.medien_parts
 
     async def send_as_telegram_message(self, bot: Bot, chat_id: int, reply_to_message_id: int = 0) -> None:
         if not hasattr(self, 'medien_parts'):
-            self.medien_parts = await self.to_media_group(inline=False)
+            self.medien_parts: list[list[InputMediaPhoto | InputMediaVideo]] = await self.to_media_group()
         for i, part in enumerate(self.medien_parts):
-            # Ensure 'part' is always a list of InputMediaPhoto/InputMediaVideo
-            if not isinstance(part, list):
-                continue  # skip invalid part
             if i != len(self.medien_parts) - 1:
                 try:
                     await bot.send_media_group(
@@ -535,7 +486,7 @@ def home_page(connected_ssh_client: paramiko.SSHClient | None = None):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat:
-        await context.bot.send_message(chat_id=chat.id, text="I'm a xhsfeedbot, please send me a xhs link!")
+        await context.bot.send_message(chat_id=chat.id, text="I'm xhsfeedbot, please send me a xhs link!\n/help for more info.")
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -543,37 +494,41 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_msg = """*Usage*
 send `xhslink\\[\\.\\]com` or `xiaohongshu\\[\\.\\]com` note link to @xhsfeedbot
 Link without `xsec_token` parameter is supported\\.
+Telegraph link without media group as default output\\.
 
 *Parameters*
-`\\-l`  Output media group with live photo\\.
-`\\-t`  Output with Telegraph page\\.
+`\\-l`  Output Telegram message media group and Telegraph media with live photo video\\.
 `\\-x`  Note link with `xsec_token`\\.
+`\\-m`  Output note media and content as direct Telegram messages \\(may consume more time\\)\\.
+
+*Inline mode*
+Use `@xhsfeedbot <note link>` in any chat to get a short preview of the note\\.
+`\\-m` parameter is not supported in inline mode\\.
 
 *Commands*
 `/start` \\- Start chat with @xhsfeedbot\\.
 `/help` \\- Show this help message\\.
-`/note` \\- Forward note to Telegram message or Telegraph\\.
-`/telegraph` \\- Forward note to Telegraph\\."""
+`/note` \\- Forward note to Telegraph or Telegram message \\(with `-m` parameter\\)\\.
+
+*Note*
+Group privacy is on\\. You need to send command to bot manually or add bot as admin in group chat\\.
+
+Due to referer policy of images and videos of `xiaohongshu\\[\\.\\]com`, media in Telegraph may not work sometimes in browser\\.
+
+If you really need to view Telegraph outside Telegram Instant View, addons like [this on Firefox](https://addons.mozilla.org/firefox/addon/togglereferrer/) may help\\."""
         await context.bot.send_message(
             chat_id=chat.id,
             text=help_msg,
-            parse_mode=ParseMode.MARKDOWN_V2
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=True
         )
-
-async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if not msg:
-        return
-    chat = update.effective_chat
-    if not chat:
-        return
-    message_text = update.message.text if update.message and update.message.text is not None else ""
+def get_url_info(message_text: str) -> dict[str, str | bool]:
     xsec_token = ''
     urls = re.findall(URL_REGEX, message_text)
     bot_logger.info(f'URLs:\n{urls}')
     if len(urls) == 0:
         bot_logger.debug("NO URL FOUND!")
-        return
+        return {'success': False, 'msg': 'No URL found in the message.', 'noteId': '', 'xsec_token': ''}
     elif re.findall(r"[a-z0-9]{24}", message_text) and not re.findall(r"user/profile/[a-z0-9]{24}", message_text):
         noteId = re.findall(r"[a-z0-9]{24}", message_text)[0]
         note_url = [u for u in urls if re.findall(r"[a-z0-9]{24}", u) and not re.findall(r"user/profile/[a-z0-9]{24}", u)][0]
@@ -592,12 +547,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if 'redirectPath=' in redirectPath:
                     redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
                 else:
-                    await context.bot.send_message(
-                        chat_id=chat.id,
-                        text=f"The note `{noteId}` is not available now or the link is invalid\\.",
-                        parse_mode=ParseMode.MARKDOWN_V2
-                    )
-                    return
+                    return {'success': False, 'msg': 'Invalid URL or the note is no longer available.', 'noteId': '', 'xsec_token': ''}
             else:
                 noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_url)[0]
             parsed_url = urlparse(str(redirectPath))
@@ -614,9 +564,33 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if 'xsec_token' in parse_qs(parsed_url.query):
                 xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
         else:
-            return
+            return {'success': False, 'msg': 'Invalid URL or the note is no longer available.', 'noteId': '', 'xsec_token': ''}
     else:
+        return {'success': False, 'msg': 'Invalid URL or the note is no longer available.', 'noteId': '', 'xsec_token': ''}
+    return {'success': True, 'msg': 'Success.', 'noteId': noteId, 'xsec_token': xsec_token}
+
+
+async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg:
         return
+    chat = update.effective_chat
+    if not chat:
+        return
+    message_text = update.message.text if update.message and update.message.text is not None else ""
+    live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
+    with_full_data = bool(re.search(r"[^\S]+-m(?!\S)", message_text))
+    url_info = get_url_info(message_text)
+    if not url_info['success']:
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=str(url_info['msg']),
+            reply_to_message_id=msg.message_id
+        )
+        return
+    noteId = str(url_info['noteId'])
+    xsec_token = str(url_info['xsec_token'])
     bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}')
     if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
@@ -639,52 +613,64 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     open_note(noteId, ssh)
     time.sleep(0.75)
 
+    comment_list_data: dict[str, Any] = {'data': {}}
+
     try:
         note_data = requests.get(
-            f"http://127.0.0.1:5001/get_note/{noteId}"
+            f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_note/{noteId}"
         ).json()
         with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
         times = 0
-        while True:
-            times += 1
-            try:
-                comment_list_data = requests.get(
-                    f"http://127.0.0.1:5001/get_comment_list/{noteId}"
-                ).json()
-                with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
-                    json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
-                    f.close()
-                bot_logger.debug('got comment list data')
-                break
-            except:
-                if times <= 3:
-                    time.sleep(0.1)
-                else:
-                    raise Exception('error when getting comment list data')
+        if with_full_data:
+            while True:
+                times += 1
+                try:
+                    comment_list_data = requests.get(
+                        f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_comment_list/{noteId}"
+                    ).json()
+                    with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
+                        json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
+                        f.close()
+                    bot_logger.debug('got comment list data')
+                    break
+                except:
+                    if times <= 3:
+                        time.sleep(0.1)
+                    else:
+                        raise Exception('error when getting comment list data')
     except:
         if ssh:
             ssh.close()
+            home_page(ssh)
         bot_logger.error(traceback.format_exc())
         return
-
-    telegraph = bool(re.search(r"[^\S]+-t(?!\S)", message_text))
-    live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
-    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
     try:
         note = Note(
             note_data['data'],
             comment_list_data=comment_list_data['data'],
             live=live,
-            telegraph=telegraph,
-            inline=False,
+            telegraph=True,
             with_xsec_token=with_xsec_token,
             original_xsec_token=xsec_token
         )
         await note.initialize()
         home_page(ssh)
-        await note.send_as_telegram_message(context.bot, chat.id, msg.message_id)
+        if with_full_data:
+            await note.send_as_telegram_message(context.bot, chat.id, msg.message_id)
+        else:
+            telegraph_url = note.telegraph_url if hasattr(note, 'telegraph_url') else await note.to_telegraph()
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url}) [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
+                parse_mode=ParseMode.MARKDOWN_V2,
+                link_preview_options=LinkPreviewOptions(
+                    is_disabled=False,
+                    url=telegraph_url,
+                ),
+                reply_to_message_id=msg.message_id
+            )
     except:
         home_page(ssh)
         await context.bot.send_message(
@@ -695,60 +681,21 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         if ssh:
             ssh.close()
-
-async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if not msg:
+async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    inline_query = update.inline_query
+    bot_logger.debug(inline_query)
+    if inline_query is None:
         return
-    chat = update.effective_chat
-    if not chat:
+    message_text = inline_query.query
+    if not message_text:
         return
-    message_text = update.message.text if update.message and update.message.text is not None else ""
-    xsec_token = ''
-    urls = re.findall(URL_REGEX, message_text)
-    bot_logger.info(f'URLs:\n{urls}')
-    if len(urls) == 0:
-        bot_logger.debug("NO URL FOUND!")
+    live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
+    url_info = get_url_info(message_text)
+    if not url_info['success']:
         return
-    elif re.findall(r"[a-z0-9]{24}", message_text) and not re.findall(r"user/profile/[a-z0-9]{24}", message_text):
-        noteId = re.findall(r"[a-z0-9]{24}", message_text)[0]
-        note_url = [u for u in urls if re.findall(r"[a-z0-9]{24}", u) and not re.findall(r"user/profile/[a-z0-9]{24}", u)][0]
-        parsed_url = urlparse(str(note_url))
-        if 'xsec_token' in parse_qs(parsed_url.query):
-            xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
-    elif 'xhslink.com' in message_text or 'xiaohongshu.com' in message_text:
-        xhslink = [u for u in urls if 'xhslink.com' in u][0]
-        bot_logger.debug(f"URL found: {xhslink}")
-        redirectPath = get_redirected_url(xhslink)
-        bot_logger.debug(f"Redirected URL: {redirectPath}")
-        if re.findall(r"https?://(?:www.)?xhslink.com/[a-z]/[A-Za-z0-9]+", xhslink):
-            if 'xiaohongshu.com/404' in redirectPath or 'xiaohongshu.com/login' in redirectPath:
-                noteId = re.findall(r"noteId=([a-z0-9]+)", redirectPath)[0]
-                if 'redirectPath=' in redirectPath:
-                    redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
-                else:
-                    await context.bot.send_message(
-                        chat_id=chat.id,
-                        text=f"The note `{noteId}` is not available now or the link is invalid\\.",
-                        parse_mode=ParseMode.MARKDOWN_V2
-                    )
-                    return
-            else:
-                noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", redirectPath)[0]
-        elif re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/[0-9a-z]+", xhslink):
-            noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", xhslink)[0]
-            parsed_url = urlparse(str(xhslink))
-            if 'xsec_token' in parse_qs(parsed_url.query):
-                xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
-        elif re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", message_text):
-            noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", xhslink)[0]
-            parsed_url = urlparse(str(xhslink))
-            if 'xsec_token' in parse_qs(parsed_url.query):
-                xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
-        else:
-            return
-    else:
-        return
+    noteId = str(url_info['noteId'])
+    xsec_token = str(url_info['xsec_token'])
     bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}')
     if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
@@ -767,70 +714,73 @@ async def note2telegraph(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         ssh = None
+    bot_logger.debug('try open note on device')
     open_note(noteId, ssh)
-    time.sleep(0.75)
+    time.sleep(0.5)
+
+    comment_list_data: dict[str, Any] = {'data': {}}
 
     try:
         note_data = requests.get(
-            f"http://127.0.0.1:5001/get_note/{noteId}"
+            f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_note/{noteId}"
         ).json()
         with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
-        times = 0
-        while True:
-            times += 1
-            try:
-                comment_list_data = requests.get(
-                    f"http://127.0.0.1:5001/get_comment_list/{noteId}"
-                ).json()
-                with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
-                    json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
-                    f.close()
-                bot_logger.debug('got comment list data')
-                break
-            except:
-                if times <= 3:
-                    time.sleep(0.1)
-                else:
-                    raise Exception('error when getting comment list data')
     except:
         if ssh:
             ssh.close()
+            home_page(ssh)
         bot_logger.error(traceback.format_exc())
         return
-
-    live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
-    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
     try:
         note = Note(
             note_data['data'],
             comment_list_data=comment_list_data['data'],
             live=live,
             telegraph=True,
-            inline=False,
             with_xsec_token=with_xsec_token,
             original_xsec_token=xsec_token
         )
         await note.initialize()
         home_page(ssh)
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=tg_msg_escape_markdown_v2(note.telegraph_url if hasattr(note, 'telegraph_url') else await note.to_telegraph()),
-            parse_mode=ParseMode.MARKDOWN_V2,
-            disable_web_page_preview=False,
-            reply_to_message_id=msg.message_id
+        telegraph_url = note.telegraph_url if hasattr(note, 'telegraph_url') else await note.to_telegraph()
+        inline_query_result = [
+            InlineQueryResultArticle(
+                id=str(uuid4()),
+                title=note.title,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url}) [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    disable_web_page_preview=False
+                ),
+                description=f"Telegraph URL with xiaohongshu.com URL ({'with' if with_xsec_token else 'no'} xsec_token)",
+            )
+        ]
+        if with_xsec_token:
+            inline_query_result.append(
+                InlineQueryResultArticle(
+                    id=str(uuid4()),
+                    title=note.title,
+                    input_message_content=InputTextMessageContent(
+                        message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url}) [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        disable_web_page_preview=False
+                    ),
+                    description="Telegraph URL with xiaohongshu.com URL (no xsec_token)",
+                )
+            )
+        await context.bot.answer_inline_query(
+            inline_query_id=inline_query.id,
+            results=inline_query_result
         )
     except:
         home_page(ssh)
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text="An error occurred while processing your request."
-        )
         bot_logger.error(traceback.format_exc())
     finally:
         if ssh:
             ssh.close()
+    return
 
 async def error_handler(update: Update | object, context: ContextTypes.DEFAULT_TYPE) -> None:
     global logging_file
@@ -859,56 +809,35 @@ def run_telegram_bot():
         .write_timeout(60)\
         .media_write_timeout(300)\
         .build()
-    
-    while 1:
-        try:
-            start_handler = CommandHandler("start", start)
-            application.add_handler(start_handler)
-            help_handler = CommandHandler("help", help)
-            application.add_handler(help_handler)
+    try:
+        start_handler = CommandHandler("start", start)
+        application.add_handler(start_handler)
+        help_handler = CommandHandler("help", help)
+        application.add_handler(help_handler)
 
-            application.add_error_handler(error_handler)
+        application.add_error_handler(error_handler)
 
-            note2feed_handler = MessageHandler(
-                filters.TEXT & (~ filters.COMMAND) & (
-                    filters.Entity(MessageEntity.URL) |
-                    filters.Entity(MessageEntity.TEXT_LINK)
-                ),
-                note2feed
-            )
-            application.add_handler(note2feed_handler)
+        note2feed_handler = MessageHandler(
+            filters.TEXT & (~ filters.COMMAND) & (
+                filters.Entity(MessageEntity.URL) |
+                filters.Entity(MessageEntity.TEXT_LINK)
+            ),
+            note2feed
+        )
+        application.add_handler(note2feed_handler)
 
-            note2feed_command_handler = CommandHandler(
-                "note",
-                note2feed
-            )
-            application.add_handler(note2feed_command_handler)
-
-            telegraph_handler = CommandHandler(
-                "telegraph",
-                note2telegraph
-            )
-            application.add_handler(telegraph_handler)
-
-            application.run_polling()
-        except KeyboardInterrupt:
-            shutdown_result = application.shutdown()
-            bot_logger.debug(f'KeyboardInterrupt received, shutdown:{shutdown_result}')
-            del shutdown_result
-            del application
-            break
-        except:
-            shutdown_result = application.shutdown()
-            bot_logger.error(f'Error! shutdown:{shutdown_result}\n{traceback.format_exc()}')
-            del shutdown_result
-            del application
-
-            application = ApplicationBuilder()\
-                .token(bot_token)\
-                .read_timeout(60)\
-                .write_timeout(60)\
-                .media_write_timeout(300)\
-                .build()
+        note2feed_command_handler = CommandHandler(
+            "note",
+            note2feed
+        )
+        application.add_handler(InlineQueryHandler(inline_note2feed))
+        application.add_handler(note2feed_command_handler)
+        application.run_polling()
+    except KeyboardInterrupt:
+        shutdown_result = application.shutdown()
+        bot_logger.debug(f'KeyboardInterrupt received, shutdown:{shutdown_result}')
+        exit(0)
 
 if __name__ == "__main__":
-    run_telegram_bot()
+    while 1:
+        run_telegram_bot()
