@@ -53,7 +53,7 @@ ADMIN_ID='Bot Owner Telegram ID'
 # 0: Android with root; 1: Jailbroken iOS
 TARGET_DEVICE_TYPE=1
 
-# ssh information neccessary if your target device type is jailbroken iOS
+# ssh information necessary if your target device type is jailbroken iOS
 SSH_IP=127.0.0.1 # device IP address
 SSH_PORT=22 # device ssh port, defaut 22
 SSH_USERNAME=root
@@ -63,7 +63,8 @@ SSH_PASSWORD=alpine
 Open three terminal windows or use screen, start all three scripts.
 ```bash
 source .venv/bin/activate
-python xhsfeedbot.py
+# export https_proxy if necessary.
+python forever.py xhsfeedbot.py
 ```
 
 ```bash
