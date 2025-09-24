@@ -510,8 +510,6 @@ def get_url_info(message_text: str) -> dict[str, str | bool]:
                 noteId = re.findall(r"noteId=([a-z0-9]+)", redirectPath)[0]
                 if 'redirectPath=' in redirectPath:
                     redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
-                else:
-                    return {'success': False, 'msg': 'Invalid URL or the note is no longer available.', 'noteId': '', 'xsec_token': ''}
             else:
                 noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_url)[0]
             parsed_url = urlparse(str(redirectPath))
@@ -649,6 +647,15 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             home_page(ssh)
         bot_logger.error(traceback.format_exc())
         return
+    if note_data['data']['data'][0]['note_list'][0]['model_type'] == 'error':
+        bot_logger.warning(f'Note data not available\n{note_data['data']}')
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=f"{note_data['data']['data'][0]['note_list'][0]['text']}\nThe note may be deleted or the account is private.\nIf you think this is an error, please contact the bot owner.\n\nNote URL: https://www.xiaohongshu.com/discovery/item/{noteId}\nAuthor URL: https://www.xiaohongshu.com/user/profile/{note_data['data']['data'][0]['note_list'][0]['user_id']}",
+            reply_to_message_id=msg.message_id
+        )
+        return
+
     try:
         note = Note(
             note_data['data'],
@@ -678,7 +685,8 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         home_page(ssh)
         await context.bot.send_message(
             chat_id=chat.id,
-            text="An error occurred while processing your request."
+            text="An error occurred while processing your request.",
+            reply_to_message_id=msg.message_id
         )
         bot_logger.error(traceback.format_exc())
     finally:
