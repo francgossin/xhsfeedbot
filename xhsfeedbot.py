@@ -692,6 +692,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         if ssh:
             ssh.close()
+
 async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
     bot_logger.debug(inline_query)
@@ -763,7 +764,10 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 input_message_content=InputTextMessageContent(
                     message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url}) [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
                     parse_mode=ParseMode.MARKDOWN_V2,
-                    disable_web_page_preview=False
+                    link_preview_options=LinkPreviewOptions(
+                        is_disabled=False,
+                        url=telegraph_url,
+                    ),
                 ),
                 description=f"Telegraph URL with xiaohongshu.com URL ({'with' if with_xsec_token else 'no'} xsec_token)",
             )
@@ -776,7 +780,10 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     input_message_content=InputTextMessageContent(
                         message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url}) [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
                         parse_mode=ParseMode.MARKDOWN_V2,
-                        disable_web_page_preview=False
+                        link_preview_options=LinkPreviewOptions(
+                            is_disabled=False,
+                            url=telegraph_url,
+                        ),
                     ),
                     description="Telegraph URL with xiaohongshu.com URL (no xsec_token)",
                 )
