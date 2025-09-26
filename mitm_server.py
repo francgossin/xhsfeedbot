@@ -5,7 +5,7 @@ from mitmproxy import http, ctx
 from urllib.parse import parse_qs, urlparse
 from typing import Any
 
-def set_request(note_id:str, url: str, data: dict, type: str) -> dict[str, Any]:
+def set_request(note_id:str, url: str, data: dict[str, Any], type: str) -> dict[str, Any]:
     requests.post(
         f"http://127.0.0.1:5001/set_{type}",
         json={"note_id": note_id, "url": url, "data": data}
@@ -13,7 +13,7 @@ def set_request(note_id:str, url: str, data: dict, type: str) -> dict[str, Any]:
     return {"note_id": note_id, "url": url, "data": data}
 
 class ImageFeedFilter:
-    def __init__(self, callback):
+    def __init__(self, callback: Any):
         self.callback = callback
         self.url_pattern = re.compile(r"https://edith.xiaohongshu.com/api/sns/v\d+/note/imagefeed")
         self.type = 'note'
@@ -41,7 +41,7 @@ class ImageFeedFilter:
             )
 
 class CommentListFilter(ImageFeedFilter):
-    def __init__(self, callback):
+    def __init__(self, callback: Any):
         super().__init__(callback)
         self.url_pattern = re.compile(r'https?://edith.xiaohongshu.com/api/sns/v\d+/note/comment/list')
         self.type = 'comment_list'
@@ -62,11 +62,13 @@ class CommentListFilter(ImageFeedFilter):
 
 
 class BlockURLs:
-    def __init__(self, block_pattern_list):
+    def __init__(self, block_pattern_list: list[str]):
         self.block_pattern_list = block_pattern_list
     
     def response(self, flow: http.HTTPFlow) -> None:
         if [True for pattern in self.block_pattern_list if re.findall(pattern, flow.request.pretty_url)]:
+            if not flow.response:
+                return
             flow.response.status_code = 345
             flow.response.content = b"{'fuckxhs': true}"
             view = ctx.master.addons.get("view")

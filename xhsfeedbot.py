@@ -762,7 +762,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 id=str(uuid4()),
                 title=note.title,
                 input_message_content=InputTextMessageContent(
-                    message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url}) [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
+                    message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n[@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
                     parse_mode=ParseMode.MARKDOWN_V2,
                     link_preview_options=LinkPreviewOptions(
                         is_disabled=False,
@@ -778,7 +778,7 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     id=str(uuid4()),
                     title=note.title,
                     input_message_content=InputTextMessageContent(
-                        message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url}) [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
+                        message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n[@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
                         parse_mode=ParseMode.MARKDOWN_V2,
                         link_preview_options=LinkPreviewOptions(
                             is_disabled=False,
@@ -858,6 +858,9 @@ def run_telegram_bot():
         os._exit(os.EX_OK)
     except NetworkError:
         bot_logger.error(f'NetworkError, probably no internet connection, script will quit now.\n{traceback.format_exc()}')
+        os._exit(os.EX_TEMPFAIL)
+    except Exception:
+        bot_logger.error(f'Unexpected error:\n{traceback.format_exc()}\n\n SCRIPT WILL QUIT NOW')
         os._exit(os.EX_TEMPFAIL)
 
 if __name__ == "__main__":
