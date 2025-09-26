@@ -11,6 +11,7 @@ import requests
 import traceback
 import subprocess
 import paramiko
+import threading
 from datetime import datetime, timedelta, timezone
 from pprint import pformat
 from dotenv import load_dotenv
@@ -67,6 +68,11 @@ logging.basicConfig(
 bot_logger = logging.getLogger("xhsfeedbot")
 bot_logger.setLevel(logging.DEBUG)
 
+# Global variables for network monitoring
+last_successful_request = time.time()
+network_timeout_threshold = 120  # 2 minutes without successful requests triggers restart
+is_network_healthy = True
+
 with open('redtoemoji.json', 'r', encoding='utf-8') as f:
     redtoemoji = json.load(f)
     f.close()
@@ -77,6 +83,52 @@ def replace_redemoji_with_emoji(text: str) -> str:
     for red_emoji, emoji in redtoemoji.items():
         text = text.replace(red_emoji, emoji)
     return text
+
+def check_network_connectivity() -> bool:
+    """Check if network connectivity is available by testing multiple endpoints"""
+    test_urls = [
+        "https://api.telegram.org",
+        "https://www.google.com", 
+        "https://1.1.1.1"
+    ]
+    
+    for url in test_urls:
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                return True
+        except:
+            continue
+    return False
+
+def update_network_status(success: bool = True):
+    """Update the global network status tracking"""
+    global last_successful_request, is_network_healthy
+    if success:
+        last_successful_request = time.time()
+        is_network_healthy = True
+    else:
+        current_time = time.time()
+        if current_time - last_successful_request > network_timeout_threshold:
+            is_network_healthy = False
+
+def network_monitor():
+    """Background network monitoring function"""
+    global is_network_healthy
+    while True:
+        try:
+            time.sleep(15)  # Check every 15 seconds
+            current_time = time.time()
+            if current_time - last_successful_request > network_timeout_threshold:
+                bot_logger.warning(f"No successful network requests for {network_timeout_threshold} seconds")
+                if not check_network_connectivity():
+                    bot_logger.error("Network connectivity test failed - triggering restart")
+                    is_network_healthy = False
+                    restart_script()
+                    break
+        except Exception as e:
+            bot_logger.error(f"Network monitor error: {e}")
+            time.sleep(10)
 
 class Note:
     def __init__(
@@ -512,7 +564,12 @@ def get_url_info(message_text: str) -> dict[str, str | bool]:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat:
-        await context.bot.send_message(chat_id=chat.id, text="I'm xhsfeedbot, please send me a xhs link!\n/help for more info.")
+        try:
+            await context.bot.send_message(chat_id=chat.id, text="I'm xhsfeedbot, please send me a xhs link!\n/help for more info.")
+            update_network_status(success=True)
+        except Exception as e:
+            bot_logger.error(f"Failed to send start message: {e}")
+            update_network_status(success=False)
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -542,12 +599,17 @@ Group privacy is on\\. You need to send command to bot manually or add bot as ad
 Due to referer policy of images and videos of `xiaohongshu\\[\\.\\]com`, media in Telegraph may not work sometimes in browser\\.
 
 If you really need to view Telegraph outside Telegram Instant View, addons like [this on Firefox](https://addons.mozilla.org/firefox/addon/togglereferrer/) may help\\."""
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=help_msg,
-            parse_mode=ParseMode.MARKDOWN_V2,
-            disable_web_page_preview=True
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text=help_msg,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                disable_web_page_preview=True
+            )
+            update_network_status(success=True)
+        except Exception as e:
+            bot_logger.error(f"Failed to send help message: {e}")
+            update_network_status(success=False)
 
 async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -592,6 +654,7 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     open_note(noteId, ssh)
     time.sleep(0.75)
 
+    note_data: dict[str, Any] = {}
     comment_list_data: dict[str, Any] = {'data': {}}
 
     try:
@@ -621,10 +684,13 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         raise Exception('error when getting comment list data')
     except:
         if ssh:
-            ssh.close()
             home_page(ssh)
         bot_logger.error(traceback.format_exc())
-        return
+    finally:
+        if ssh:
+            ssh.close()
+        if not note_data or 'data' not in note_data:
+            return
     if note_data['data']['data'][0]['note_list'][0]['model_type'] == 'error':
         bot_logger.warning(f'Note data not available\n{note_data['data']}')
         await context.bot.send_message(
@@ -644,7 +710,6 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             original_xsec_token=xsec_token
         )
         await note.initialize()
-        home_page(ssh)
         if with_full_data:
             await note.send_as_telegram_message(context.bot, chat.id, msg.message_id)
         else:
@@ -659,17 +724,19 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ),
                 reply_to_message_id=msg.message_id
             )
-    except:
-        home_page(ssh)
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text="An error occurred while processing your request.",
-            reply_to_message_id=msg.message_id
-        )
-        bot_logger.error(traceback.format_exc())
-    finally:
-        if ssh:
-            ssh.close()
+            update_network_status(success=True)  # Successfully sent message
+    except Exception as e:
+        try:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text="An error occurred while processing your request.",
+                reply_to_message_id=msg.message_id
+            )
+            update_network_status(success=True)
+        except Exception as send_error:
+            bot_logger.error(f"Failed to send error message: {send_error}")
+            update_network_status(success=False)
+        bot_logger.error(f"Error in note2feed: {e}\n{traceback.format_exc()}")
 
 async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
@@ -706,22 +773,36 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ssh = None
     bot_logger.debug('try open note on device')
     open_note(noteId, ssh)
-    time.sleep(0.5)
+    time.sleep(0.6)
 
+    note_data: dict[str, Any] = {}
     comment_list_data: dict[str, Any] = {'data': {}}
 
-    try:
-        note_data = requests.get(
-            f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_note/{noteId}"
-        ).json()
-        with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
-            json.dump(note_data, f, indent=4, ensure_ascii=False)
-            f.close()
-    except:
-        if ssh:
-            ssh.close()
-            home_page(ssh)
-        bot_logger.error(traceback.format_exc())
+    for _ in range(3):
+        try:
+            note_data = requests.get(
+                f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_note/{noteId}"
+            ).json()
+            with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
+                json.dump(note_data, f, indent=4, ensure_ascii=False)
+                f.close()
+        except:
+            if _ == 2:
+                if ssh:
+                    home_page(ssh)
+                bot_logger.error(traceback.format_exc())
+                return
+            else:
+                time.sleep(0.1)
+                bot_logger.warning(f'Failed to retrieve note data for {noteId}, retrying...')
+        else:
+            if ssh:
+                home_page(ssh)
+            break
+        finally:
+            if ssh and _ == 2:
+                ssh.close()
+    if not note_data or 'data' not in note_data:
         return
     try:
         note = Note(
@@ -733,7 +814,6 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             original_xsec_token=xsec_token
         )
         await note.initialize()
-        home_page(ssh)
         telegraph_url = note.telegraph_url if hasattr(note, 'telegraph_url') else await note.to_telegraph()
         inline_query_result = [
             InlineQueryResultArticle(
@@ -770,21 +850,30 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             inline_query_id=inline_query.id,
             results=inline_query_result
         )
-    except:
-        home_page(ssh)
-        bot_logger.error(traceback.format_exc())
-    finally:
-        if ssh:
-            ssh.close()
+        update_network_status(success=True)
+    except Exception as e:
+        bot_logger.error(f"Error in inline_note2feed: {e}\n{traceback.format_exc()}")
+        update_network_status(success=False)
     return
 
 async def error_handler(update: Any, context: ContextTypes.DEFAULT_TYPE) -> None:
     global logging_file
     admin_id = os.getenv('ADMIN_ID')
-    if isinstance(context.error, NetworkError):
-        bot_logger.error(f"NetworkError:\n{context.error}\n\n{traceback.format_exc()}")
-        restart_script()
-        raise Exception(f"Update {update} caused error:\n{context.error}\n\n{traceback.format_exc()}")
+    error_str = str(context.error).lower()
+    
+    # Check for network-related errors that should trigger restart
+    network_keywords = [
+        'timeout', 'pool timeout', 'connection', 'network', 
+        'timed out', 'connecttimeout', 'readtimeout', 'writetimeout'
+    ]
+    
+    if isinstance(context.error, NetworkError) or any(keyword in error_str for keyword in network_keywords):
+        bot_logger.error(f"Network-related error detected:\n{context.error}\n\n{traceback.format_exc()}")
+        update_network_status(success=False)
+        if not is_network_healthy or not check_network_connectivity():
+            bot_logger.error("Network appears unhealthy - triggering restart")
+            restart_script()
+        return
     elif isinstance(context.error, BadRequest):
         bot_logger.error(f"BadRequest error:\n{context.error}\n\n{traceback.format_exc()}")
         return
@@ -793,25 +882,36 @@ async def error_handler(update: Any, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     else:
         if admin_id:
-            await context.bot.send_document(
-                chat_id=admin_id,
-                caption=f'```python\n{tg_msg_escape_markdown_v2(pformat(update))}\n```\n CAUSED \n```python\n{tg_msg_escape_markdown_v2(pformat(context.error))[-888:]}\n```',
-                parse_mode=ParseMode.MARKDOWN_V2,
-                document=logging_file,
-                disable_notification=True
-            )
-        bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n send message ok\n\n{traceback.format_exc()}")
-        raise Exception(f"Update {update} caused error:\n{context.error}\n\n{traceback.format_exc()}")
+            try:
+                await context.bot.send_document(
+                    chat_id=admin_id,
+                    caption=f'```python\n{tg_msg_escape_markdown_v2(pformat(update))}\n```\n CAUSED \n```python\n{tg_msg_escape_markdown_v2(pformat(context.error))[-888:]}\n```',
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    document=logging_file,
+                    disable_notification=True
+                )
+                update_network_status(success=True)  # Successfully sent message
+            except Exception as send_error:
+                bot_logger.error(f"Failed to send error report: {send_error}")
+                update_network_status(success=False)
+        bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n{traceback.format_exc()}")
 
 def run_telegram_bot():
     bot_token = os.getenv('BOT_TOKEN')
     if not bot_token:
         raise ValueError("BOT_TOKEN environment variable is required")
+    
+    # Start network monitoring in background thread
+    monitor_thread = threading.Thread(target=network_monitor, daemon=True)
+    monitor_thread.start()
+    
     application = ApplicationBuilder()\
         .token(bot_token)\
-        .read_timeout(60)\
-        .write_timeout(60)\
-        .media_write_timeout(300)\
+        .read_timeout(30)\
+        .write_timeout(30)\
+        .media_write_timeout(120)\
+        .connect_timeout(15)\
+        .pool_timeout(10)\
         .build()
     try:
         start_handler = CommandHandler("start", start)
@@ -836,18 +936,33 @@ def run_telegram_bot():
         )
         application.add_handler(InlineQueryHandler(inline_note2feed))
         application.add_handler(note2feed_command_handler)
-        application.run_polling()
+        
         bot_logger.info('Bot started polling')
+        application.run_polling()
     except KeyboardInterrupt:
         shutdown_result = application.shutdown()
         bot_logger.debug(f'KeyboardInterrupt received, shutdown:{shutdown_result}')
         raise Exception('KeyboardInterrupt received, script will quit now.')
-    except NetworkError:
-        bot_logger.error(f'NetworkError, probably no internet connection, script will quit now.\n{traceback.format_exc()}')
+    except NetworkError as e:
+        bot_logger.error(f'NetworkError: {e}\n{traceback.format_exc()}')
+        update_network_status(success=False)
+        if not check_network_connectivity():
+            bot_logger.error('Network connectivity test failed - restarting')
+            restart_script()
         raise Exception('NetworkError received, script will quit now.')
-    except Exception:
-        bot_logger.error(f'Unexpected error:\n{traceback.format_exc()}\n\n SCRIPT WILL QUIT NOW')
-        raise Exception('Unexpected error received, script will quit now.')
+    except Exception as e:
+        error_str = str(e).lower()
+        network_keywords = ['timeout', 'connection', 'network', 'timed out']
+        
+        if any(keyword in error_str for keyword in network_keywords):
+            bot_logger.error(f'Network-related error in main loop: {e}\n{traceback.format_exc()}')
+            update_network_status(success=False)
+            if not check_network_connectivity():
+                bot_logger.error('Network connectivity test failed - restarting')
+                restart_script()
+        else:
+            bot_logger.error(f'Unexpected error:\n{traceback.format_exc()}\n\n SCRIPT WILL QUIT NOW')
+        raise Exception(f'Error in main loop: {e}')
 
 def restart_script():
     bot_logger.info("Restarting script...")
