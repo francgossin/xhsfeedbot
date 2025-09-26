@@ -1,10 +1,12 @@
 import os
+import sys
 import re
 import json
 import time
 import asyncio # type: ignore
 import random
 import logging
+import psutil
 import requests
 import traceback
 import subprocess
@@ -43,7 +45,7 @@ from telegraph.aio import Telegraph # type: ignore
 # Load environment variables from .env file
 load_dotenv()
 
-logging_file = os.path.join("log", f"{datetime.now().strftime('%Y%m%d%H%M%S')}.log")
+logging_file = os.path.join("log", f"{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.log")
 
 # Configure logging to only show messages from your script
 logging.basicConfig(
@@ -57,37 +59,12 @@ logging.basicConfig(
     ],
     format="%(asctime)s.%(msecs)03d %(levelname)s %(module)s: %(message)s",
     datefmt="%F %A %T",
-    level=logging.CRITICAL  # Set root logger to CRITICAL to block everything
+    level=logging.DEBUG
 )
 
 # Create your own logger for your bot messages
 bot_logger = logging.getLogger("xhsfeedbot")
 bot_logger.setLevel(logging.DEBUG)
-
-# Disable ALL third-party loggers by setting the root logger filter
-class OnlyBotLoggerFilter(logging.Filter):
-    def filter(self, record: logging.LogRecord) -> bool:
-        # Only allow logs from your bot (xhsfeedbot module) or direct logging calls
-        return record.name == "xhsfeedbot" or record.name == "__main__"
-
-# Add the filter to all handlers
-for handler in logging.root.handlers:
-    handler.addFilter(OnlyBotLoggerFilter())
-
-# Disable specific known noisy loggers as backup
-common_loggers = [
-    "httpx", "httpx._client", "httpx._config", "httpcore", "httpcore.connection",
-    "httpcore.http11", "httpcore.http2", "h11", "h2", "urllib3", "urllib3.connectionpool", 
-    "urllib3.util", "urllib3.util.retry", "requests", "requests.packages.urllib3",
-    "telegram", "telegram.ext", "asyncio", "websockets", "aiohttp", "paramiko",
-    "telegraph"
-]
-
-for logger_name in common_loggers:
-    logging.getLogger(logger_name).disabled = True
-
-# Make bot_logger available globally for use throughout the file
-bot_logger = logging.getLogger("xhsfeedbot")
 
 with open('redtoemoji.json', 'r', encoding='utf-8') as f:
     redtoemoji = json.load(f)
@@ -805,18 +782,15 @@ async def error_handler(update: Update | object, context: ContextTypes.DEFAULT_T
     admin_id = os.getenv('ADMIN_ID')
     if not admin_id:
         return
-    try:
-        await context.bot.send_document(
-            chat_id=admin_id,
-            caption=f'```python\n{tg_msg_escape_markdown_v2(pformat(update))}\n```\n CAUSED \n```python\n{tg_msg_escape_markdown_v2(pformat(context.error))[-888:]}\n```',
-            parse_mode=ParseMode.MARKDOWN_V2,
-            document=logging_file,
-            disable_notification=True
-        )
-        bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n send message ok\n\n{traceback.format_exc()}")
-    except Exception:
-        bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n try shutdown\nsend message also error:\n\n{traceback.format_exc()}\n\n SCRIPT WILL QUIT NOW")
-        os._exit(os.EX_TEMPFAIL)
+    await context.bot.send_document(
+        chat_id=admin_id,
+        caption=f'```python\n{tg_msg_escape_markdown_v2(pformat(update))}\n```\n CAUSED \n```python\n{tg_msg_escape_markdown_v2(pformat(context.error))[-888:]}\n```',
+        parse_mode=ParseMode.MARKDOWN_V2,
+        document=logging_file,
+        disable_notification=True
+    )
+    bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n send message ok\n\n{traceback.format_exc()}")
+    raise Exception(f"Update {update} caused error:\n{context.error}\n\n{traceback.format_exc()}")
 
 def run_telegram_bot():
     bot_token = os.getenv('BOT_TOKEN')
@@ -852,20 +826,31 @@ def run_telegram_bot():
         application.add_handler(InlineQueryHandler(inline_note2feed))
         application.add_handler(note2feed_command_handler)
         application.run_polling()
+        bot_logger.info('Bot started polling')
     except KeyboardInterrupt:
         shutdown_result = application.shutdown()
         bot_logger.debug(f'KeyboardInterrupt received, shutdown:{shutdown_result}')
-        os._exit(os.EX_OK)
+        raise Exception('KeyboardInterrupt received, script will quit now.')
     except NetworkError:
         bot_logger.error(f'NetworkError, probably no internet connection, script will quit now.\n{traceback.format_exc()}')
-        os._exit(os.EX_TEMPFAIL)
+        raise Exception('NetworkError received, script will quit now.')
     except Exception:
         bot_logger.error(f'Unexpected error:\n{traceback.format_exc()}\n\n SCRIPT WILL QUIT NOW')
-        os._exit(os.EX_TEMPFAIL)
+        raise Exception('Unexpected error received, script will quit now.')
+
+def restart_script():
+    bot_logger.info("Restarting script...")
+    try:
+        process = psutil.Process(os.getpid())
+        for handler in process.open_files() + process.net_connections():
+            os.close(handler.fd)
+    except Exception as e:
+        bot_logger.error(f'Error when closing file descriptors: {e}\n{traceback.format_exc()}')
+    python = sys.executable
+    os.execl(python, python, *sys.argv)
 
 if __name__ == "__main__":
     try:
         run_telegram_bot()
-    except Exception as _:
-        bot_logger.error(f'Unexpected error:\n{traceback.format_exc()}\n\n SCRIPT WILL QUIT NOW')
-        os._exit(os.EX_TEMPFAIL)
+    except Exception as e:
+        restart_script()
