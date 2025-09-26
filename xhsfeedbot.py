@@ -38,6 +38,7 @@ from telegram import (
 )
 from telegram.error import (
     NetworkError,
+    BadRequest
 )
 from telegram.constants import ParseMode
 from telegraph.aio import Telegraph # type: ignore
@@ -777,20 +778,26 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ssh.close()
     return
 
-async def error_handler(update: Update | object, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def error_handler(update: Any, context: ContextTypes.DEFAULT_TYPE) -> None:
     global logging_file
     admin_id = os.getenv('ADMIN_ID')
-    if not admin_id:
+    if isinstance(context.error, NetworkError):
+        bot_logger.error(f"NetworkError:\n{context.error}\n\n{traceback.format_exc()}")
         return
-    await context.bot.send_document(
-        chat_id=admin_id,
-        caption=f'```python\n{tg_msg_escape_markdown_v2(pformat(update))}\n```\n CAUSED \n```python\n{tg_msg_escape_markdown_v2(pformat(context.error))[-888:]}\n```',
-        parse_mode=ParseMode.MARKDOWN_V2,
-        document=logging_file,
-        disable_notification=True
-    )
-    bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n send message ok\n\n{traceback.format_exc()}")
-    raise Exception(f"Update {update} caused error:\n{context.error}\n\n{traceback.format_exc()}")
+    elif isinstance(context.error, BadRequest):
+        bot_logger.error(f"BadRequest error:\n{context.error}\n\n{traceback.format_exc()}")
+        return
+    else:
+        if admin_id:
+            await context.bot.send_document(
+                chat_id=admin_id,
+                caption=f'```python\n{tg_msg_escape_markdown_v2(pformat(update))}\n```\n CAUSED \n```python\n{tg_msg_escape_markdown_v2(pformat(context.error))[-888:]}\n```',
+                parse_mode=ParseMode.MARKDOWN_V2,
+                document=logging_file,
+                disable_notification=True
+            )
+        bot_logger.error(f"Update {update} caused error:\n{context.error}\n\n send message ok\n\n{traceback.format_exc()}")
+        raise Exception(f"Update {update} caused error:\n{context.error}\n\n{traceback.format_exc()}")
 
 def run_telegram_bot():
     bot_token = os.getenv('BOT_TOKEN')
