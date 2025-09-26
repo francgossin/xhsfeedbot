@@ -783,9 +783,13 @@ async def error_handler(update: Any, context: ContextTypes.DEFAULT_TYPE) -> None
     admin_id = os.getenv('ADMIN_ID')
     if isinstance(context.error, NetworkError):
         bot_logger.error(f"NetworkError:\n{context.error}\n\n{traceback.format_exc()}")
-        return
+        restart_script()
+        raise Exception(f"Update {update} caused error:\n{context.error}\n\n{traceback.format_exc()}")
     elif isinstance(context.error, BadRequest):
         bot_logger.error(f"BadRequest error:\n{context.error}\n\n{traceback.format_exc()}")
+        return
+    elif isinstance(context.error, KeyboardInterrupt):
+        os._exit(0)
         return
     else:
         if admin_id:
