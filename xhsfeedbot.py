@@ -73,6 +73,10 @@ last_successful_request = time.time()
 network_timeout_threshold = 120  # 2 minutes without successful requests triggers restart
 is_network_healthy = True
 
+# Concurrency control
+max_concurrent_requests = 5  # Maximum number of concurrent note processing
+processing_semaphore = asyncio.Semaphore(max_concurrent_requests)
+
 with open('redtoemoji.json', 'r', encoding='utf-8') as f:
     redtoemoji = json.load(f)
     f.close()
@@ -611,7 +615,30 @@ If you really need to view Telegraph outside Telegram Instant View, addons like 
             bot_logger.error(f"Failed to send help message: {e}")
             update_network_status(success=False)
 
+async def process_note_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Process a single note request with concurrency control"""
+    user_id = update.effective_user.id if update.effective_user else "unknown"
+    chat_id = update.effective_chat.id if update.effective_chat else "unknown"
+    
+    # Log when we're waiting for semaphore
+    available_slots = processing_semaphore._value
+    bot_logger.debug(f"Processing request from user {user_id} in chat {chat_id}. Available slots: {available_slots}")
+    
+    async with processing_semaphore:
+        bot_logger.debug(f"Started concurrent processing for user {user_id}")
+        try:
+            await _note2feed_internal(update, context)
+        except Exception as e:
+            bot_logger.error(f"Error in concurrent processing for user {user_id}: {e}")
+        finally:
+            bot_logger.debug(f"Finished concurrent processing for user {user_id}")
+
 async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Main handler that creates concurrent tasks for note processing"""
+    asyncio.create_task(process_note_request(update, context))
+
+async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Internal note processing function"""
     msg = update.message
     if not msg:
         return
@@ -652,7 +679,10 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ssh = None
     bot_logger.debug('try open note on device')
     open_note(noteId, ssh)
-    time.sleep(0.75)
+    await asyncio.sleep(0.75)
+    home_page(ssh)
+    if ssh:
+        ssh.close()
 
     note_data: dict[str, Any] = {}
     comment_list_data: dict[str, Any] = {'data': {}}
@@ -679,16 +709,12 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     break
                 except:
                     if times <= 3:
-                        time.sleep(0.1)
+                        await asyncio.sleep(0.1)
                     else:
                         raise Exception('error when getting comment list data')
     except:
-        if ssh:
-            home_page(ssh)
         bot_logger.error(traceback.format_exc())
     finally:
-        if ssh:
-            ssh.close()
         if not note_data or 'data' not in note_data:
             return
     if note_data['data']['data'][0]['note_list'][0]['model_type'] == 'error':
@@ -738,7 +764,30 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_network_status(success=False)
         bot_logger.error(f"Error in note2feed: {e}\n{traceback.format_exc()}")
 
+async def process_inline_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Process a single inline query request with concurrency control"""
+    user_id = update.effective_user.id if update.effective_user else "unknown"
+    
+    available_slots = processing_semaphore._value
+    bot_logger.debug(f"Processing inline query from user {user_id}. Available slots: {available_slots}")
+    
+    async with processing_semaphore:
+        bot_logger.debug(f"Started concurrent inline processing for user {user_id}")
+        try:
+            await _inline_note2feed_internal(update, context)
+        except Exception as e:
+            bot_logger.error(f"Error in concurrent inline processing for user {user_id}: {e}")
+        finally:
+            bot_logger.debug(f"Finished concurrent inline processing for user {user_id}")
+
 async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Main inline handler that creates concurrent tasks"""
+    # For inline queries, we need to respond quickly, so we await the result
+    # but still use the semaphore for rate limiting
+    await process_inline_request(update, context)
+
+async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Internal inline query processing function"""
     inline_query = update.inline_query
     bot_logger.debug(inline_query)
     if inline_query is None:
@@ -773,7 +822,10 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ssh = None
     bot_logger.debug('try open note on device')
     open_note(noteId, ssh)
-    time.sleep(0.6)
+    await asyncio.sleep(0.6)
+    home_page(ssh)
+    if ssh:
+        ssh.close()
 
     note_data: dict[str, Any] = {}
     comment_list_data: dict[str, Any] = {'data': {}}
@@ -788,20 +840,13 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f.close()
         except:
             if _ == 2:
-                if ssh:
-                    home_page(ssh)
                 bot_logger.error(traceback.format_exc())
                 return
             else:
-                time.sleep(0.1)
+                await asyncio.sleep(0.1)
                 bot_logger.warning(f'Failed to retrieve note data for {noteId}, retrying...')
         else:
-            if ssh:
-                home_page(ssh)
             break
-        finally:
-            if ssh and _ == 2:
-                ssh.close()
     if not note_data or 'data' not in note_data:
         return
     try:
@@ -906,12 +951,14 @@ def run_telegram_bot():
     monitor_thread.start()
     
     application = ApplicationBuilder()\
+        .concurrent_updates(True)\
         .token(bot_token)\
         .read_timeout(30)\
         .write_timeout(30)\
         .media_write_timeout(120)\
         .connect_timeout(15)\
         .pool_timeout(10)\
+        .concurrent_updates(True)\
         .build()
     try:
         start_handler = CommandHandler("start", start)
@@ -932,12 +979,13 @@ def run_telegram_bot():
 
         note2feed_command_handler = CommandHandler(
             "note",
-            note2feed
+            note2feed,
+            block=False
         )
-        application.add_handler(InlineQueryHandler(inline_note2feed))
+        application.add_handler(InlineQueryHandler(inline_note2feed, block=False))
         application.add_handler(note2feed_command_handler)
         
-        bot_logger.info('Bot started polling')
+        bot_logger.info(f'Bot started polling with concurrent processing enabled (max {max_concurrent_requests} concurrent requests)')
         application.run_polling()
     except KeyboardInterrupt:
         shutdown_result = application.shutdown()
