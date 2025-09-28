@@ -154,8 +154,6 @@ class Note:
             'name': note_data['data'][0]['user']['name'],
             'red_id': note_data['data'][0]['user']['red_id'],
             'image': get_clean_url(note_data['data'][0]['user']['image']),
-            # 'nickname': note_data['data'][0]['user']['nickname'],
-            # 'userid': note_data['data'][0]['user']['userid'],
         }
         # self.text_language_code = note_data['data'][0]['note_list'][0]['text_language_code']
 
@@ -197,15 +195,8 @@ class Note:
         self.length = len(self.desc + self.title + self.first_comment)
 
         self.images_list: list[dict[str, str]] = []
-        if 'images_list' in note_data['data'][0]['note_list'][0] and 'video' not in note_data['data'][0]['note_list'][0]:
+        if 'images_list' in note_data['data'][0]['note_list'][0]:
             for each in note_data['data'][0]['note_list'][0]['images_list']:
-                self.images_list.append(
-                    {
-                        'live': '',
-                        'url': remove_image_url_params(each['original']),
-                        'thumbnail': remove_image_url_params(each['url_multi_level']['low'])
-                    }
-                )
                 if 'live_photo' in each and self.live:
                     bot_logger.debug(f'live photo found in {each}')
                     live_urls: list[str] = []
@@ -217,6 +208,13 @@ class Note:
                         self.images_list.append(
                             {'live': 'True', 'url': live_urls[0], 'thumbnail': remove_image_url_params(each['url'])}
                         )
+                self.images_list.append(
+                    {
+                        'live': '',
+                        'url': remove_image_url_params(each['original']),
+                        'thumbnail': remove_image_url_params(each['url_multi_level']['low'])
+                    }
+                )
         bot_logger.debug(f"Images found: {self.images_list}")
         self.url = get_clean_url(note_data['data'][0]['note_list'][0]['share_info']['link'])
         self.with_xsec_token = with_xsec_token
