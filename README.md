@@ -1,4 +1,9 @@
 # xhsfeedbot
+
+![](./res/desc.jpg)
+
+A bot that forward REDNote to Telegram Message or Telegraph
+
 [![Require: Python 3.13](https://img.shields.io/badge/Python-3.13-blue?logo=python)](https://www.python.org/)
 
 [![Require: mitmproxy 12.1.2](https://img.shields.io/badge/mitmproxy-12.1.2-blue)](https://pypi.org/project/mitmproxy/)
@@ -10,16 +15,6 @@
 [![Require: requests 2.32.5](https://img.shields.io/badge/requests-2.32.5-blue)](https://pypi.org/project/requests/)
 [![Require: paramiko 4.0.0](https://img.shields.io/badge/paramiko-4.0.0-blue)](https://www.paramiko.org/)
 
-[![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)](#android-devices)
-[![iOS](https://img.shields.io/badge/iOS-000000?&logo=apple&logoColor=white)](#ios-devices)
-
-[![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](#server-side)
-[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=F0F0F0)](#server-side)
-[![Windows](https://custom-icon-badges.demolab.com/badge/Windows-0078D6?logo=windows11&logoColor=white)](#server-side)
-
-A bot that forward REDNote to Telegram Message or Telegraph
-
-[![Telegram Channel](https://img.shields.io/badge/Telegram-Channel-green.svg?logo=telegram)](https://t.me/xhsfeed)
 [![xhsfeed Bot](https://img.shields.io/badge/xhsfeed-Bot-green?logo=telegram)](https://t.me/xhsfeedbot)
 
 ## Requirements
@@ -60,11 +55,11 @@ SSH_USERNAME=root
 SSH_PASSWORD=alpine
 # Default user name and password for jailbroken iOS. You may have to configure your own.
 ```
-Open three terminal windows or use screen, start all three scripts.
+Open three terminal windows or use `screen`, start all three scripts.
 ```bash
 source .venv/bin/activate
 # export https_proxy if necessary.
-python forever.py xhsfeedbot.py
+python xhsfeedbot.py
 ```
 
 ```bash
@@ -95,4 +90,4 @@ Then install `OpenSSH` through APT package manager for jailbroken iOS like Cydia
 #### Android devices
 Guide of [Android Emulator](https://docs.mitmproxy.org/stable/howto/install-system-trusted-ca-android/)
 
-If you are not using an emulator, you need to root your device and then manually move CA certificate to system partition and reboot.
+If you are not using an emulator, you need to root your device and then manually move CA certificate to system partition, or use [Magisk](https://docs.mitmproxy.org/stable/howto/install-system-trusted-ca-android/#instructions-when-using-magisk) method, and then reboot.
