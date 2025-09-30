@@ -192,7 +192,7 @@ class Note:
             )
             self.comment_user = comment_list_data['data']['comments'][comment_index]['user']['nickname'] if comment_list_data['data']['comments'] else ''
             self.first_comment_tag_v2 = comment_list_data['data']['comments'][comment_index]['show_tags_v2'][0]['text'] if comment_list_data['data']['comments'][comment_index]['show_tags_v2'] else ''
-        self.length = len(self.desc + self.title + self.first_comment)
+        self.length: int = len(self.desc + self.title + self.first_comment)
 
         self.images_list: list[dict[str, str]] = []
         if 'images_list' in note_data['data'][0]['note_list'][0]:
@@ -282,7 +282,7 @@ class Note:
         else:
             ipaddr_html = 'Unknown IP Address'
         html += f'<p>📍 {ipaddr_html}</p>'
-        html += '<br><i>via</i> <a href="https://t.me/xhsfeedbot">@xhsfeedbot</a>'
+        # html += '<br><i>via</i> <a href="https://t.me/xhsfeedbot">@xhsfeedbot</a>'
         self.html = html
         bot_logger.debug(f"HTML generated, \n\n{self.html}\n\n")
         return self.html
@@ -299,12 +299,12 @@ class Note:
             self.to_html()
         telegraph = Telegraph()
         await telegraph.create_account( # type: ignore
-            short_name='@xhsfeed',
+            short_name='@xhsfeedbot',
         )
         response = await telegraph.create_page( # type: ignore
             title=f"{self.title if self.title else f"Note"} @{self.user['name']}",
-            author_name=f'@xhsfeed',
-            author_url=f"https://t.me/xhsfeed",
+            author_name=f'@xhsfeedbot',
+            author_url=f"https://t.me/xhsfeedbot",
             html_content=self.html,
         )
         self.telegraph_url = response['url']
