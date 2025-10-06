@@ -198,8 +198,6 @@ class Note:
         self.tag_string: str = ' '.join([f"#{tag}" for tag in self.tags])
 
         self.share_content: str = note_data['data'][0]['note_list'][0]['share_info']['content']
-        for tag in self.tags:
-            self.share_content = self.share_content.replace(f"#{tag}", "")
         self.share_content = re.sub(r'(#\S+)', '', self.share_content)
         self.share_content += "..." if self.share_content.strip().strip('#') and not self.share_content.endswith("...") else ""
 
