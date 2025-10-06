@@ -157,7 +157,7 @@ class Note:
         }
         # self.text_language_code = note_data['data'][0]['note_list'][0]['text_language_code']
 
-        self.title: str = note_data['data'][0]['note_list'][0]['title'] if note_data['data'][0]['note_list'][0]['title'] else f"Untitled Note by @{self.user['name']} ({self.user['red_id']})"
+        self.title: str = note_data['data'][0]['note_list'][0]['title'] if note_data['data'][0]['note_list'][0]['title'] else f"Untitled Note"
         self.type: str = note_data['data'][0]['note_list'][0]['type']
 
         self.raw_desc = replace_redemoji_with_emoji(note_data['data'][0]['note_list'][0]['desc'])
@@ -194,6 +194,15 @@ class Note:
             self.first_comment_tag_v2 = comment_list_data['data']['comments'][comment_index]['show_tags_v2'][0]['text'] if comment_list_data['data']['comments'][comment_index]['show_tags_v2'] else ''
         self.length: int = len(self.desc + self.title + self.first_comment)
 
+        self.tags: list[str] = [tag['name'] for tag in note_data['data'][0]['note_list'][0]['hash_tag']]
+        self.tag_string: str = ' '.join([f"#{tag}" for tag in self.tags])
+
+        self.share_content: str = note_data['data'][0]['note_list'][0]['share_info']['content']
+        for tag in self.tags:
+            self.share_content = self.share_content.replace(f"#{tag}", "")
+        self.share_content += "..." if self.share_content.strip() and not self.share_content.endswith("...") else ""
+
+        self.thumbnail = note_data['data'][0]['note_list'][0]['share_info']['image']
         self.images_list: list[dict[str, str]] = []
         if 'images_list' in note_data['data'][0]['note_list'][0]:
             for each in note_data['data'][0]['note_list'][0]['images_list']:
@@ -229,7 +238,6 @@ class Note:
         self.video_url = ''
         if 'video' in note_data['data'][0]['note_list'][0]:
             self.video_url = note_data['data'][0]['note_list'][0]['video']['url']
-            self.video_thumbnail = note_data['data'][0]['note_list'][0]['images_list'][0]['url_multi_level']['low']
         if telegraph:
             self.to_html()
         tgmsg_result = self.to_telegram_message(preview=bool(self.length >= 666))
@@ -302,7 +310,7 @@ class Note:
             short_name='@xhsfeedbot',
         )
         response = await telegraph.create_page( # type: ignore
-            title=f"{self.title if self.title else f"Note"} @{self.user['name']}",
+            title=f"{self.title} @{self.user['name']}",
             author_name=f'@xhsfeedbot',
             author_url=f"https://t.me/xhsfeedbot",
             html_content=self.html,
@@ -432,10 +440,19 @@ class Note:
                         media=part,
                     )
                 except:
+                    bot_logger.error(f"Failed to send media group:\n{traceback.format_exc()}")
+                    media: list[InputMediaPhoto | InputMediaVideo] = []
+                    for p in part:
+                        if type(p.media) == str and '.mp4' not in p.media:
+                            media.append(InputMediaPhoto(requests.get(p.media).content))
+                        elif type(p.media) == str:
+                            media.append(InputMediaVideo(requests.get(p.media).content))
+                        else:
+                            media.append(p)
                     await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
-                        media=[InputMediaPhoto(requests.get(p.media).content) if type(p.media) == str and '.mp4' not in p.media else InputMediaVideo(requests.get(p.media).content) if type(p.media) == str else p for p in part],
+                        media=media,
                     )
             else:
                 try:
@@ -452,10 +469,19 @@ class Note:
                         parse_mode=ParseMode.MARKDOWN_V2,
                     )
                 except:
+                    bot_logger.error(f"Failed to send media group:\n{traceback.format_exc()}")
+                    media: list[InputMediaPhoto | InputMediaVideo] = []
+                    for p in part:
+                        if type(p.media) == str and '.mp4' not in p.media:
+                            media.append(InputMediaPhoto(requests.get(p.media).content))
+                        elif type(p.media) == str:
+                            media.append(InputMediaVideo(requests.get(p.media).content))
+                        else:
+                            media.append(p)
                     await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
-                        media=[InputMediaPhoto(requests.get(p.media).content) if type(p.media) == str and '.mp4' not in p.media else InputMediaVideo(requests.get(p.media).content) if type(p.media) == str else p for p in part],
+                        media=media,
                         caption=self.message if hasattr(
                             self,
                             'message'
@@ -740,7 +766,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             telegraph_url = note.telegraph_url if hasattr(note, 'telegraph_url') else await note.to_telegraph()
             await context.bot.send_message(
                 chat_id=chat.id,
-                text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url}) [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
+                text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.share_content)}" if note.share_content.strip() else ""}{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
                 parse_mode=ParseMode.MARKDOWN_V2,
                 link_preview_options=LinkPreviewOptions(
                     is_disabled=False,
@@ -863,7 +889,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                 id=str(uuid4()),
                 title=note.title,
                 input_message_content=InputTextMessageContent(
-                    message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n[@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
+                    message_text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.share_content)}" if note.share_content.strip() else ""}{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
                     parse_mode=ParseMode.MARKDOWN_V2,
                     link_preview_options=LinkPreviewOptions(
                         is_disabled=False,
@@ -871,6 +897,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                     ),
                 ),
                 description=f"Telegraph URL with xiaohongshu.com URL ({'with' if with_xsec_token else 'no'} xsec_token)",
+                thumbnail_url=note.thumbnail
             )
         ]
         if with_xsec_token:
@@ -879,7 +906,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                     id=str(uuid4()),
                     title=note.title,
                     input_message_content=InputTextMessageContent(
-                        message_text=f"[{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n[@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📝 [View via Telegraph]({telegraph_url})",
+                        message_text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.share_content)}" if note.share_content.strip() else ""}{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
                         parse_mode=ParseMode.MARKDOWN_V2,
                         link_preview_options=LinkPreviewOptions(
                             is_disabled=False,
@@ -887,6 +914,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                         ),
                     ),
                     description="Telegraph URL with xiaohongshu.com URL (no xsec_token)",
+                    thumbnail_url=note.thumbnail
                 )
             )
         await context.bot.answer_inline_query(
