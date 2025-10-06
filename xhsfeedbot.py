@@ -771,6 +771,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
                 link_preview_options=LinkPreviewOptions(
                     is_disabled=False,
                     url=telegraph_url,
+                    prefer_large_media=True
                 ),
                 reply_to_message_id=msg.message_id
             )
@@ -894,6 +895,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                     link_preview_options=LinkPreviewOptions(
                         is_disabled=False,
                         url=telegraph_url,
+                        prefer_large_media=True
                     ),
                 ),
                 description=f"Telegraph URL with xiaohongshu.com URL ({'with' if with_xsec_token else 'no'} xsec_token)",
@@ -911,6 +913,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                         link_preview_options=LinkPreviewOptions(
                             is_disabled=False,
                             url=telegraph_url,
+                            prefer_large_media=True
                         ),
                     ),
                     description="Telegraph URL with xiaohongshu.com URL (no xsec_token)",
