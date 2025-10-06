@@ -71,9 +71,9 @@ class BlockURLs:
                 return
             flow.response.status_code = 345
             flow.response.content = b"{'fuckxhs': true}"
-            view = ctx.master.addons.get("view")
-            if view.store_count() >= 10:
-                view.clear()
+            view = ctx.master.addons.get("view") # type: ignore
+            if view.store_count() >= 10: # type: ignore
+                view.clear() # type: ignore
 
 def get_block_pattern_list() -> list[str]:
     return [
@@ -126,7 +126,7 @@ def get_block_pattern_list() -> list[str]:
         # r'https?://edith.xiaohongshu.com/api/sns/v\d/note/user/posted\S*',
     ]
 
-addons = [
+addons: list[Any] = [
     ImageFeedFilter(set_request),
     CommentListFilter(set_request),
     BlockURLs(get_block_pattern_list()),
