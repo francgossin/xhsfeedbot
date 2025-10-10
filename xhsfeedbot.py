@@ -216,10 +216,13 @@ class Note:
                         self.images_list.append(
                             {'live': 'True', 'url': live_urls[0], 'thumbnail': remove_image_url_params(each['url'])}
                         )
+                original_img_url = each['original']
+                if re.match(r'sns-na-i\d.xhscdn.com', original_img_url):
+                    original_img_url = re.sub(r'sns-na-i\d.xhscdn.com', 'sns-na-i6.xhscdn.com', original_img_url)
                 self.images_list.append(
                     {
                         'live': '',
-                        'url': remove_image_url_params(each['original']),
+                        'url': remove_image_url_params(original_img_url),
                         'thumbnail': remove_image_url_params(each['url_multi_level']['low'])
                     }
                 )
