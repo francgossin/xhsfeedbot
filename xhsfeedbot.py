@@ -219,7 +219,7 @@ class Note:
                             {'live': 'True', 'url': live_urls[0], 'thumbnail': remove_image_url_params(each['url'])}
                         )
                 original_img_url = each['original']
-                if re.match(r'sns-na-i\d.xhscdn.com', original_img_url):
+                if re.findall(r'sns-na-i\d.xhscdn.com', original_img_url):
                     original_img_url = re.sub(r'sns-na-i\d.xhscdn.com', 'sns-na-i6.xhscdn.com', original_img_url)
                 self.images_list.append(
                     {
@@ -242,7 +242,7 @@ class Note:
         self.video_url = ''
         if 'video' in note_data['data'][0]['note_list'][0]:
             self.video_url = note_data['data'][0]['note_list'][0]['video']['url']
-            if not re.match(r'sign=[0-9a-z]+', self.video_url):
+            if not re.findall(r'sign=[0-9a-z]+', self.video_url):
                 self.video_url = re.sub(r'[0-9a-z\-]+.xhscdn.com', 'sns-bak-v1.xhscdn.com', self.video_url)
         if telegraph:
             self.to_html()
