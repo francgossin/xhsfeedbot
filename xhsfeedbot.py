@@ -237,6 +237,8 @@ class Note:
         self.video_url = ''
         if 'video' in note_data['data'][0]['note_list'][0]:
             self.video_url = note_data['data'][0]['note_list'][0]['video']['url']
+            if not re.match(r'sign=[0-9a-z]+', self.video_url):
+                self.video_url = re.sub(r'[0-9a-z\-].xhscdn.com', 'sns-bak-v1.xhscdn.com', self.video_url)
         if telegraph:
             self.to_html()
         tgmsg_result = self.to_telegram_message(preview=bool(self.length >= 666))
