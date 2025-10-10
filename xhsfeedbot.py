@@ -163,7 +163,7 @@ class Note:
         self.raw_desc = replace_redemoji_with_emoji(note_data['data'][0]['note_list'][0]['desc'])
         bot_logger.debug(f"Note raw_desc\n\n {self.raw_desc}")
         self.desc = re.sub(
-            r'(?P<tag>#\S+?)\[[⺀-⺙⺛-⻳⼀-⿕々〇〡-〩〸-〺〻㐀-䶵一-鿃豈-鶴侮-頻並-龎]+\]#',
+            r'(?P<tag>#\S+?)\[\S+\]#',
             r' \g<tag> ',
             self.raw_desc
         )
@@ -186,7 +186,7 @@ class Note:
                 comment_list_data['data']['comments'][comment_index]['content']
             )
             self.first_comment = re.sub(
-                r'#(?P<tag_text>\S+?)\[\S\]#',
+                r'#(?P<tag_text>\S+?)\[\S+\]#',
                 r'\g<tag_text>',
                 self.first_comment
             )
