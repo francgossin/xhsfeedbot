@@ -759,9 +759,9 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         try:
-            self.telegraph_account.get_account_info()  # type: ignore
+            telegraph_account.get_account_info()  # type: ignore
         except:
-            await self.telegraph_account.create_account( # type: ignore
+            await telegraph_account.create_account( # type: ignore
                 short_name='@xhsfeedbot',
             )
         note = Note(
@@ -890,9 +890,9 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
         return
     try:
         try:
-            self.telegraph_account.get_account_info()  # type: ignore
+            telegraph_account.get_account_info()  # type: ignore
         except:
-            await self.telegraph_account.create_account( # type: ignore
+            await telegraph_account.create_account( # type: ignore
                 short_name='@xhsfeedbot',
             )
         note = Note(
