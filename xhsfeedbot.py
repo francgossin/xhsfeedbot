@@ -144,7 +144,9 @@ class Note:
             with_xsec_token: bool = False,
             original_xsec_token: str = '',
             with_full_data: bool = False,
+            telegraph_account: Telegraph | None = None,
     ) -> None:
+        self.telegraph_account = telegraph_account
         self.telegraph = telegraph
         self.live = live
         if not note_data['data']:
@@ -309,10 +311,11 @@ class Note:
     async def to_telegraph(self) -> str:
         if not hasattr(self, 'html'):
             self.to_html()
-        telegraph = Telegraph()
-        await telegraph.create_account( # type: ignore
-            short_name='@xhsfeedbot',
-        )
+        if not self.telegraph_account:
+            telegraph = Telegraph()
+            await telegraph.create_account( # type: ignore
+                short_name='@xhsfeedbot',
+            )
         response = await telegraph.create_page( # type: ignore
             title=f"{self.title} @{self.user['name']}",
             author_name=f'@xhsfeedbot',
@@ -761,7 +764,8 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             live=live,
             telegraph=True,
             with_xsec_token=with_xsec_token,
-            original_xsec_token=xsec_token
+            original_xsec_token=xsec_token,
+            telegraph_account=telegraph_account
         )
         await note.initialize()
         if with_full_data:
@@ -885,7 +889,8 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
             live=live,
             telegraph=True,
             with_xsec_token=with_xsec_token,
-            original_xsec_token=xsec_token
+            original_xsec_token=xsec_token,
+            telegraph_account=telegraph_account
         )
         await note.initialize()
         telegraph_url = note.telegraph_url if hasattr(note, 'telegraph_url') else await note.to_telegraph()
@@ -1058,6 +1063,10 @@ def restart_script():
 
 if __name__ == "__main__":
     try:
+        telegraph_account = Telegraph()
+        await telegraph_account.create_account( # type: ignore
+            short_name='@xhsfeedbot',
+        )
         run_telegram_bot()
     except Exception as e:
         restart_script()
