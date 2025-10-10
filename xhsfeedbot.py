@@ -312,11 +312,11 @@ class Note:
         if not hasattr(self, 'html'):
             self.to_html()
         if not self.telegraph_account:
-            telegraph = Telegraph()
-            await telegraph.create_account( # type: ignore
+            self.telegraph_account = Telegraph()
+            await self.telegraph_account.create_account( # type: ignore
                 short_name='@xhsfeedbot',
             )
-        response = await telegraph.create_page( # type: ignore
+        response = await self.telegraph_account.create_page( # type: ignore
             title=f"{self.title} @{self.user['name']}",
             author_name=f'@xhsfeedbot',
             author_url=f"https://t.me/xhsfeedbot",
@@ -1064,7 +1064,7 @@ def restart_script():
 if __name__ == "__main__":
     try:
         telegraph_account = Telegraph()
-        await telegraph_account.create_account( # type: ignore
+        telegraph_account.create_account( # type: ignore
             short_name='@xhsfeedbot',
         )
         run_telegram_bot()
