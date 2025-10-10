@@ -758,6 +758,12 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     try:
+        try:
+            self.telegraph_account.get_account_info()  # type: ignore
+        except:
+            await self.telegraph_account.create_account( # type: ignore
+                short_name='@xhsfeedbot',
+            )
         note = Note(
             note_data['data'],
             comment_list_data=comment_list_data['data'],
@@ -883,6 +889,12 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     if not note_data or 'data' not in note_data:
         return
     try:
+        try:
+            self.telegraph_account.get_account_info()  # type: ignore
+        except:
+            await self.telegraph_account.create_account( # type: ignore
+                short_name='@xhsfeedbot',
+            )
         note = Note(
             note_data['data'],
             comment_list_data=comment_list_data['data'],
@@ -1064,9 +1076,6 @@ def restart_script():
 if __name__ == "__main__":
     try:
         telegraph_account = Telegraph()
-        telegraph_account.create_account( # type: ignore
-            short_name='@xhsfeedbot',
-        )
         run_telegram_bot()
     except Exception as e:
         restart_script()
