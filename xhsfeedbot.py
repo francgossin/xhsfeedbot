@@ -199,9 +199,9 @@ class Note:
         self.tags: list[str] = [tag['name'] for tag in note_data['data'][0]['note_list'][0]['hash_tag']]
         self.tag_string: str = ' '.join([f"#{tag}" for tag in self.tags])
 
-        self.share_content: str = note_data['data'][0]['note_list'][0]['share_info']['content']
+        self.share_content: str = self.desc[:60]
         self.share_content = re.sub(r'(#\S+)', '', self.share_content)
-        self.share_content += "..." if self.share_content.strip().strip('#') and not self.share_content.endswith("...") else ""
+        self.share_content += "..." if self.share_content.strip().strip('#') and not self.share_content.endswith("...") and len(self.desc) > 60 else ""
 
         self.thumbnail = note_data['data'][0]['note_list'][0]['share_info']['image']
         self.images_list: list[dict[str, str]] = []
@@ -629,11 +629,7 @@ Use `@xhsfeedbot <note link>` in any chat to get a short preview of the note\\.
 `/note` \\- Forward note to Telegraph or Telegram message \\(with `-m` parameter\\)\\.
 
 *Note*
-Group privacy is on\\. You need to send command to bot manually or add bot as admin in group chat\\.
-
-Due to referer policy of images and videos of `xiaohongshu\\[\\.\\]com`, media in Telegraph may not work sometimes in browser\\.
-
-If you really need to view Telegraph outside Telegram Instant View, addons like [this on Firefox](https://addons.mozilla.org/firefox/addon/togglereferrer/) may help\\."""
+Group privacy is on\\. You need to send command to bot manually or add bot as admin in group chat\\."""
         try:
             await context.bot.send_message(
                 chat_id=chat.id,
