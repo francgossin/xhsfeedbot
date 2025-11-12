@@ -243,7 +243,7 @@ class Note:
         if 'video' in note_data['data'][0]['note_list'][0]:
             self.video_url = note_data['data'][0]['note_list'][0]['video']['url']
             if not re.findall(r'sign=[0-9a-z]+', self.video_url):
-                self.video_url = re.sub(r'[0-9a-z\-]+.xhscdn.com', 'sns-bak-v1.xhscdn.com', self.video_url)
+                self.video_url = re.sub(r'[0-9a-z\-]+\.xhscdn\.(com|net)', 'sns-bak-v1.xhscdn.com', self.video_url)
         if telegraph:
             self.to_html()
         tgmsg_result = self.to_telegram_message(preview=bool(self.length >= 666))
@@ -476,7 +476,7 @@ class Note:
                         parse_mode=ParseMode.MARKDOWN_V2,
                     )
                 except:
-                    bot_logger.error(f"Failed to send media group:\n{traceback.format_exc()}")
+                    bot_logger.error(f"Failed to send media group:\n{pformat(part)}\n{traceback.format_exc()}")
                     media: list[InputMediaPhoto | InputMediaVideo] = []
                     for p in part:
                         if type(p.media) == str and '.mp4' not in p.media:
@@ -485,6 +485,7 @@ class Note:
                             media.append(InputMediaVideo(requests.get(p.media).content))
                         else:
                             media.append(p)
+                    bot_logger.debug(f"Retrying with downloaded media:\n{pformat(media)}")
                     await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
@@ -574,7 +575,7 @@ def get_url_info(message_text: str) -> dict[str, str | bool]:
             if 'xiaohongshu.com/404' in redirectPath or 'xiaohongshu.com/login' in redirectPath:
                 noteId = re.findall(r"noteId=([a-z0-9]+)", redirectPath)[0]
                 if 'redirectPath=' in redirectPath:
-                    redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', ''))
+                    redirectPath = unquote(redirectPath.replace('https://www.xiaohongshu.com/login?redirectPath=', '').replace('https://www.xiaohongshu.com/404?redirectPath=', '').replace('https://www.xiaohongshu.com/login?redirectPath=', ''))
             else:
                 noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", clean_url)[0]
             parsed_url = urlparse(str(redirectPath))
