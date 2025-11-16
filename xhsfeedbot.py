@@ -867,7 +867,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             telegraph_url = note.telegraph_url if hasattr(note, 'telegraph_url') else await note.to_telegraph()
             await context.bot.send_message(
                 chat_id=chat.id,
-                text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url}){f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
+                text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
                 parse_mode=ParseMode.MARKDOWN_V2,
                 link_preview_options=LinkPreviewOptions(
                     is_disabled=False,
@@ -1015,7 +1015,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                 id=str(uuid4()),
                 title=note.title,
                 input_message_content=InputTextMessageContent(
-                    message_text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url}){f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
+                    message_text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
                     parse_mode=ParseMode.MARKDOWN_V2,
                     link_preview_options=LinkPreviewOptions(
                         is_disabled=False,
@@ -1033,7 +1033,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                     id=str(uuid4()),
                     title=note.title,
                     input_message_content=InputTextMessageContent(
-                        message_text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url}){f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
+                        message_text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
                         parse_mode=ParseMode.MARKDOWN_V2,
                         link_preview_options=LinkPreviewOptions(
                             is_disabled=False,
