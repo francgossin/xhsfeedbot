@@ -1,5 +1,6 @@
 # Environment variables
 .env
+whitelist.json
 
 # Python
 __pycache__/

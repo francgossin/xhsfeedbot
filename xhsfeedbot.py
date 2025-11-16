@@ -77,6 +77,49 @@ is_network_healthy = True
 max_concurrent_requests = 5  # Maximum number of concurrent note processing
 processing_semaphore = asyncio.Semaphore(max_concurrent_requests)
 
+# Whitelist functionality
+whitelist_enabled = os.getenv('WHITELIST_ENABLED', 'false').lower() == 'true'
+whitelisted_users = []
+
+def load_whitelist():
+    """Load whitelisted user IDs from environment variable or file"""
+    global whitelisted_users
+    
+    # Try to load from environment variable first (comma-separated)
+    whitelist_env = os.getenv('WHITELISTED_USER_IDS', '')
+    if whitelist_env:
+        try:
+            whitelisted_users = [int(uid.strip()) for uid in whitelist_env.split(',') if uid.strip()]
+            bot_logger.info(f"Loaded {len(whitelisted_users)} whitelisted users from environment variable")
+        except ValueError as e:
+            bot_logger.error(f"Error parsing WHITELISTED_USER_IDS: {e}")
+    
+    # Try to load from whitelist.json file if it exists
+    whitelist_file = 'whitelist.json'
+    if os.path.exists(whitelist_file):
+        try:
+            with open(whitelist_file, 'r', encoding='utf-8') as f:
+                whitelist_data: dict[str, list[int]] = json.load(f)
+                if 'users' in whitelist_data:
+                    users_list: list[int] = whitelist_data['users']
+                    whitelisted_users.extend(users_list)
+                # Remove duplicates
+                whitelisted_users = list(set(whitelisted_users))
+                bot_logger.info(f"Loaded whitelist from {whitelist_file}: {len(whitelisted_users)} users")
+        except Exception as e:
+            bot_logger.error(f"Error loading whitelist from {whitelist_file}: {e}")
+
+def is_user_whitelisted(user_id: int | None) -> bool:
+    """Check if a user is whitelisted"""
+    if user_id is None:
+        return False
+    if not whitelist_enabled:
+        return True
+    return user_id in whitelisted_users
+
+# Load whitelist at startup
+load_whitelist()
+
 with open('redtoemoji.json', 'r', encoding='utf-8') as f:
     redtoemoji = json.load(f)
     f.close()
@@ -318,8 +361,8 @@ class Note:
             )
         response = await self.telegraph_account.create_page( # type: ignore
             title=f"{self.title} @{self.user['name']}",
-            author_name=f'@xhsfeedbot',
-            author_url=f"https://t.me/xhsfeedbot",
+            # author_name=f'@xhsfeedbot',
+            # author_url=f"https://t.me/xhsfeedbot",
             html_content=self.html,
         )
         self.telegraph_url = response['url']
@@ -598,7 +641,21 @@ def get_url_info(message_text: str) -> dict[str, str | bool]:
     return {'success': True, 'msg': 'Success.', 'noteId': noteId, 'xsec_token': xsec_token}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id if update.effective_user else None
     chat = update.effective_chat
+    
+    if not is_user_whitelisted(user_id):
+        bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
+        if chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text="Sorry, you are not authorized to use this bot."
+                )
+            except Exception as e:
+                bot_logger.error(f"Failed to send unauthorized message: {e}")
+        return
+    
     if chat:
         try:
             await context.bot.send_message(chat_id=chat.id, text="I'm xhsfeedbot, please send me a xhs link!\n/help for more info.")
@@ -608,7 +665,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_network_status(success=False)
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id if update.effective_user else None
     chat = update.effective_chat
+    
+    if not is_user_whitelisted(user_id):
+        bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
+        if chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text="Sorry, you are not authorized to use this bot."
+                )
+            except Exception as e:
+                bot_logger.error(f"Failed to send unauthorized message: {e}")
+        return
+    
     if chat:
         help_msg = """*Usage*
 send `xhslink\\[\\.\\]com` or `xiaohongshu\\[\\.\\]com` note link to @xhsfeedbot
@@ -667,6 +738,24 @@ async def note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Internal note processing function"""
+    user_id = update.effective_user.id if update.effective_user else None
+    
+    # Check whitelist
+    if not is_user_whitelisted(user_id):
+        bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
+        msg = update.message
+        chat = update.effective_chat
+        if msg and chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text="Sorry, you are not authorized to use this bot.",
+                    reply_to_message_id=msg.message_id
+                )
+            except Exception as e:
+                bot_logger.error(f"Failed to send unauthorized message: {e}")
+        return
+    
     msg = update.message
     if not msg:
         return
@@ -824,6 +913,23 @@ async def inline_note2feed(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Internal inline query processing function"""
+    user_id = update.effective_user.id if update.effective_user else None
+    
+    # Check whitelist
+    if not is_user_whitelisted(user_id):
+        bot_logger.warning(f"Unauthorized inline access attempt from user {user_id}")
+        inline_query = update.inline_query
+        if inline_query:
+            try:
+                await context.bot.answer_inline_query(
+                    inline_query_id=inline_query.id,
+                    results=[],
+                    cache_time=0
+                )
+            except Exception as e:
+                bot_logger.error(f"Failed to respond to unauthorized inline query: {e}")
+        return
+    
     inline_query = update.inline_query
     bot_logger.debug(inline_query)
     if inline_query is None:
