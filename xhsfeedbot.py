@@ -646,14 +646,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not is_user_whitelisted(user_id):
         bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
-        if chat:
-            try:
-                await context.bot.send_message(
-                    chat_id=chat.id,
-                    text="Sorry, you are not authorized to use this bot."
-                )
-            except Exception as e:
-                bot_logger.error(f"Failed to send unauthorized message: {e}")
+        # if chat:
+        #     try:
+        #         await context.bot.send_message(
+        #             chat_id=chat.id,
+        #             text="Sorry, you are not authorized to use this bot."
+        #         )
+        #     except Exception as e:
+        #         bot_logger.error(f"Failed to send unauthorized message: {e}")
         return
     
     if chat:
@@ -666,18 +666,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id if update.effective_user else None
+    bot_logger.debug(f"Help requested by user {user_id}")
     chat = update.effective_chat
     
     if not is_user_whitelisted(user_id):
         bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
-        if chat:
-            try:
-                await context.bot.send_message(
-                    chat_id=chat.id,
-                    text="Sorry, you are not authorized to use this bot."
-                )
-            except Exception as e:
-                bot_logger.error(f"Failed to send unauthorized message: {e}")
+        # if chat:
+        #     try:
+        #         await context.bot.send_message(
+        #             chat_id=chat.id,
+        #             text="Sorry, you are not authorized to use this bot."
+        #         )
+        #     except Exception as e:
+        #         bot_logger.error(f"Failed to send unauthorized message: {e}")
         return
     
     if chat:
@@ -745,15 +746,15 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
         msg = update.message
         chat = update.effective_chat
-        if msg and chat:
-            try:
-                await context.bot.send_message(
-                    chat_id=chat.id,
-                    text="Sorry, you are not authorized to use this bot.",
-                    reply_to_message_id=msg.message_id
-                )
-            except Exception as e:
-                bot_logger.error(f"Failed to send unauthorized message: {e}")
+        # if msg and chat:
+        #     try:
+        #         await context.bot.send_message(
+        #             chat_id=chat.id,
+        #             text="Sorry, you are not authorized to use this bot.",
+        #             reply_to_message_id=msg.message_id
+        #         )
+        #     except Exception as e:
+        #         bot_logger.error(f"Failed to send unauthorized message: {e}")
         return
     
     msg = update.message
@@ -918,16 +919,16 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     # Check whitelist
     if not is_user_whitelisted(user_id):
         bot_logger.warning(f"Unauthorized inline access attempt from user {user_id}")
-        inline_query = update.inline_query
-        if inline_query:
-            try:
-                await context.bot.answer_inline_query(
-                    inline_query_id=inline_query.id,
-                    results=[],
-                    cache_time=0
-                )
-            except Exception as e:
-                bot_logger.error(f"Failed to respond to unauthorized inline query: {e}")
+        # inline_query = update.inline_query
+        # if inline_query:
+        #     try:
+        #         await context.bot.answer_inline_query(
+        #             inline_query_id=inline_query.id,
+        #             results=[],
+        #             cache_time=0
+        #         )
+        #     except Exception as e:
+        #         bot_logger.error(f"Failed to respond to unauthorized inline query: {e}")
         return
     
     inline_query = update.inline_query
