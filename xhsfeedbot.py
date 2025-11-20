@@ -351,9 +351,12 @@ class Note:
                     html += f" -> " + f'<a href="https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}"> @{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})</a>' + '</p>'
                 else:
                     html += '</p>'
-                html += f'<p>{tg_msg_escape_html(comment["content"])}</p>'
+                html += f'<p>{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}</p>'
                 for pic in comment['pictures']:
-                    html += f'<img src="{re.sub(r'sns-note-i\d.xhscdn.com', 'sns-na-i6.xhscdn.com', pic).split('?imageView')[0]}"></img>'
+                    if 'mp4' in pic:
+                        html += f'<video src="{pic}"></video>'
+                    else:
+                        html += f'<img src="{pic}"></img>'
                 html += f'<p>❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]} 📍 {tg_msg_escape_html(comment["ip_location"])} {get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}</p>'
                 # html += f'<img src="{comment["user"]["images"]}"></img>'
         self.html = html
@@ -424,26 +427,14 @@ class Note:
         else:
             ip_html = 'Unknown IP Address'
         message += f'>📍 {ip_html}\n'
-        if self.comments_with_context:
-            comment_text = ''
-            for comment in self.comments_with_context:
-                comment_text += f'💬 [Comment](https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""})'
-                comment_text += f'{tg_msg_escape_markdown_v2(comment["content"])}'
-                for _, pic in enumerate(comment['pictures']):
-                    comment_text += f'[Photo {_}]({pic})'
-                comment_text += f'❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]} 📍 {tg_msg_escape_markdown_v2(comment["ip_location"])} {get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}'
-                comment_text += f'👤 [@{comment["user"]["nickname"]} ({comment["user"]["red_id"]})](https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]})'
-                if 'target_comment' in comment:
-                    comment_text += f"{tg_msg_escape_markdown_v2(" -> ")}" + f'[@{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})](https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]})'
-        else:
-            comment_tag = ''
-            if hasattr(self, 'first_comment_tag_v2'):
-                if self.first_comment_tag_v2:
-                    comment_tag = f'[{self.first_comment_tag_v2}]'
-            message += self.make_block_quotation(
-                f'🗨️ @{self.comment_user} {comment_tag}\n'
-                f'{self.first_comment}'
-            ) if self.first_comment else ''
+        comment_tag = ''
+        if hasattr(self, 'first_comment_tag_v2'):
+            if self.first_comment_tag_v2:
+                comment_tag = f'[{self.first_comment_tag_v2}]'
+        message += self.make_block_quotation(
+            f'🗨️ @{self.comment_user} {comment_tag}\n'
+            f'{self.first_comment}'
+        ) if self.first_comment else ''
         message += '\n_via_ @xhsfeedbot'
         self.message = message
         bot_logger.debug(f"Telegram message generated, \n\n{self.message}\n\n")
@@ -454,14 +445,14 @@ class Note:
         for _, imgs in enumerate(self.images_list):
             if not imgs['live']:
                 self.medien.append(
-                        InputMediaPhoto(imgs['url'])
+                    InputMediaPhoto(imgs['url'])
                 )
-            else:
-                self.medien.append(
-                    InputMediaVideo(
-                        requests.get(imgs['url']).content
-                    )
-                )
+            # else:
+            #     self.medien.append(
+            #         InputMediaVideo(
+            #             requests.get(imgs['url']).content
+            #         )
+            #     )
         if self.video_url:
             self.medien.append(
                 InputMediaVideo(requests.get(self.video_url).content)
@@ -470,12 +461,13 @@ class Note:
         return self.medien_parts
 
     async def send_as_telegram_message(self, bot: Bot, chat_id: int, reply_to_message_id: int = 0) -> None:
+        sent_message = None
         if not hasattr(self, 'medien_parts'):
             self.medien_parts: list[list[InputMediaPhoto | InputMediaVideo]] = await self.to_media_group()
         for i, part in enumerate(self.medien_parts):
             if i != len(self.medien_parts) - 1:
                 try:
-                    await bot.send_media_group(
+                    sent_message = await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
                         media=part,
@@ -486,18 +478,14 @@ class Note:
                     for p in part:
                         if type(p.media) == str and '.mp4' not in p.media:
                             media.append(InputMediaPhoto(requests.get(p.media).content))
-                        elif type(p.media) == str:
-                            media.append(InputMediaVideo(requests.get(p.media).content))
-                        else:
-                            media.append(p)
-                    await bot.send_media_group(
+                    sent_message = await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
                         media=media,
                     )
             else:
                 try:
-                    await bot.send_media_group(
+                    sent_message = await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
                         media=part,
@@ -515,12 +503,8 @@ class Note:
                     for p in part:
                         if type(p.media) == str and '.mp4' not in p.media:
                             media.append(InputMediaPhoto(requests.get(p.media).content))
-                        elif type(p.media) == str:
-                            media.append(InputMediaVideo(requests.get(p.media).content))
-                        else:
-                            media.append(p)
                     bot_logger.debug(f"Retrying with downloaded media:\n{pformat(media)}")
-                    await bot.send_media_group(
+                    sent_message = await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
                         media=media,
@@ -531,6 +515,60 @@ class Note:
                             preview=bool(self.length >= 666)
                         ),
                         parse_mode=ParseMode.MARKDOWN_V2,
+                    )
+        if not sent_message:
+            bot_logger.error("No message was sent!")
+            return
+        reply_id: int = sent_message[0].message_id
+        comment_id_to_message_id: dict[str, Any] = {}
+        if self.comments_with_context:
+            for _, comment in enumerate(self.comments_with_context):
+                comment_text = ''
+                comment_text += f'💬 [Comment](https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""})'
+                if 'target_comment' in comment:
+                    comment_text += f'\nReply to [@{tg_msg_escape_markdown_v2(comment["target_comment"]["user"]["nickname"])} \\({tg_msg_escape_markdown_v2(comment["target_comment"]["user"]["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]})\n'
+                else:
+                    comment_text += '\n'
+                comment_text += f'{self.make_block_quotation(replace_redemoji_with_emoji(comment["content"]))}\n'
+                comment_text += f'❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]} 📍 {tg_msg_escape_markdown_v2(comment["ip_location"])} {get_time_emoji(comment["time"])} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(comment["time"]))}\n'
+                comment_text += f'👤 [@{tg_msg_escape_markdown_v2(comment["user"]["nickname"])} \\({tg_msg_escape_markdown_v2(comment["user"]["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]})'
+                bot_logger.debug(f"Sending comment:\n{comment_text}")
+                if 'target_comment' in comment and _ > 0:
+                    reply_id = comment_id_to_message_id[comment['target_comment']['id']].message_id
+                if comment['pictures']:
+                    # 1. Split pictures into chunks of 10
+                    picture_chunks = [comment['pictures'][i:i + 10] for i in range(0, len(comment['pictures']), 10)]
+                    for i, chunk in enumerate(picture_chunks):
+                        media: list[InputMediaPhoto | InputMediaVideo] = []
+                        for pic in chunk:
+                            if 'mp4' not in pic:
+                                media.append(InputMediaPhoto(requests.get(pic).content))
+                        # 2. Check if this is the LAST chunk
+                        if i == len(picture_chunks) - 1:
+                            # Send the last chunk WITH the caption
+                            sent_messages = await bot.send_media_group(
+                                chat_id=chat_id,
+                                reply_to_message_id=reply_id,
+                                media=media,
+                                caption=comment_text,
+                                parse_mode=ParseMode.MARKDOWN_V2
+                            )
+                            # 3. Store ONLY the first message object so .message_id works later
+                            comment_id_to_message_id[comment['id']] = sent_messages[0]
+                        else:
+                            # Send intermediate chunks WITHOUT caption
+                            await bot.send_media_group(
+                                chat_id=chat_id,
+                                reply_to_message_id=reply_id,
+                                media=media,
+                            )
+                else:
+                    comment_id_to_message_id[comment['id']] = await bot.send_message(
+                        chat_id=chat_id,
+                        reply_to_message_id=reply_id,
+                        text=comment_text,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        disable_web_page_preview=True
                     )
 
 def get_redirected_url(url: str) -> str:
@@ -645,7 +683,19 @@ def parse_comment(comment_data: dict[str, Any]):
     user = comment_data.get('user', {})
     content = comment_data.get('content', '')
     pictures = comment_data.get('pictures', [])
-    pictures = [p['origin_url'] for p in pictures]
+    picture_urls: list[str] = []
+    for p in pictures:
+        original_url = p.get('origin_url', '')
+        if 'video_info' in p:
+            video_info = p.get('video_info', '')
+            if video_info:
+                video_data = json.loads(video_info)
+                for stream in video_data['stream']:
+                    if video_data['stream'][stream]:
+                        if 'backup_urls' in video_data['stream'][stream][0]:
+                            video_url = video_data['stream'][stream][0]['backup_urls'][0]
+                            picture_urls.append(video_url)
+        picture_urls.append(re.sub(r'sns-note-i\d.xhscdn.com', 'sns-na-i6.xhscdn.com', original_url).split('?imageView')[0])
     id = comment_data.get('id', '')
     time = comment_data.get('time', 0)
     like_count = comment_data.get('like_count', 0)
@@ -654,7 +704,7 @@ def parse_comment(comment_data: dict[str, Any]):
     data: dict[str, Any] = {
         'user': user,
         'content': content,
-        'pictures': pictures,
+        'pictures': picture_urls,
         'id': id,
         'time': time,
         'like_count': like_count,
@@ -840,10 +890,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
                     message_text += f" {qr_data}"
         except Exception as e:
             bot_logger.error(f"Failed to decode QR code: {e}")
-                    
-    live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
     with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
-    with_full_data = bool(re.search(r"[^\S]+-m(?!\S)", message_text))
     url_info = get_url_info(message_text)
     if not url_info['success']:
         await context.bot.send_message(
@@ -891,7 +938,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
         times = 0
-        if with_full_data or anchorCommentId:
+        if anchorCommentId:
             while True:
                 times += 1
                 try:
@@ -932,7 +979,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         note = Note(
             note_data['data'],
             comment_list_data=comment_list_data['data'],
-            live=live,
+            live=True,
             telegraph=True,
             with_xsec_token=with_xsec_token,
             original_xsec_token=xsec_token,
@@ -940,22 +987,8 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             anchorCommentId=anchorCommentId
         )
         await note.initialize()
-        if with_full_data:
-            await note.send_as_telegram_message(context.bot, chat.id, msg.message_id)
-        else:
-            telegraph_url = note.telegraph_url if hasattr(note, 'telegraph_url') else await note.to_telegraph()
-            await context.bot.send_message(
-                chat_id=chat.id,
-                text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
-                parse_mode=ParseMode.MARKDOWN_V2,
-                link_preview_options=LinkPreviewOptions(
-                    is_disabled=False,
-                    url=telegraph_url,
-                    prefer_large_media=True
-                ),
-                reply_to_message_id=msg.message_id
-            )
-            update_network_status(success=True)  # Successfully sent message
+        await note.send_as_telegram_message(context.bot, chat.id, msg.message_id)
+        update_network_status(success=True)  # Successfully sent message
     except Exception as e:
         try:
             await context.bot.send_message(
@@ -1017,7 +1050,6 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     message_text = inline_query.query
     if not message_text:
         return
-    live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
     with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
     url_info = get_url_info(message_text)
     if not url_info['success']:
@@ -1084,7 +1116,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
         note = Note(
             note_data['data'],
             comment_list_data=comment_list_data['data'],
-            live=live,
+            live=True,
             telegraph=True,
             with_xsec_token=with_xsec_token,
             original_xsec_token=xsec_token,
