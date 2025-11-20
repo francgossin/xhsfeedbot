@@ -43,11 +43,14 @@ mitmproxy_linux==0.12.7
 mitmproxy_rs==0.12.7
 msgpack==1.1.1
 nest-asyncio==1.6.0
+numpy==2.2.6
+opencv-python==4.12.0.88
 packaging==25.0
 paramiko==4.0.0
 parso==0.8.5
 passlib==1.7.4
 pexpect==4.9.0
+pillow==12.0.0
 platformdirs==4.4.0
 prompt_toolkit==3.0.52
 psutil==7.0.0
@@ -67,6 +70,7 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 python-telegram-bot==22.4
 pytz==2025.2
+pyzbar==0.1.9
 pyzmq==27.1.0
 requests==2.32.5
 ruamel.yaml==0.18.15

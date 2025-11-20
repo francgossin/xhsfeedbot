@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from urllib.parse import unquote, urljoin, parse_qs, urlparse
 from typing import Any
 from uuid import uuid4
+from io import BytesIO
 
 from telegram.ext import (
     filters,
@@ -43,6 +44,8 @@ from telegram.error import (
 )
 from telegram.constants import ParseMode
 from telegraph.aio import Telegraph # type: ignore
+from PIL import Image
+from pyzbar.pyzbar import decode # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs]
 
 # Load environment variables from .env file
 load_dotenv()
@@ -188,6 +191,7 @@ class Note:
             original_xsec_token: str = '',
             with_full_data: bool = False,
             telegraph_account: Telegraph | None = None,
+            anchorCommentId: str = ''
     ) -> None:
         self.telegraph_account = telegraph_account
         self.telegraph = telegraph
@@ -221,6 +225,7 @@ class Note:
         self.liked_count = note_data['data'][0]['note_list'][0]['liked_count']
         # self.last_update_time = note_data['data'][0]['note_list'][0]['last_update_time']
         self.first_comment = ''
+        self.comments_with_context: list[dict[str, Any]] = []
         if int(self.comments_count) and comment_list_data:
             nonblank_comments_index = [c for c in range(len(comment_list_data['data']['comments'])) if comment_list_data['data']['comments'][c]['content']]
             if nonblank_comments_index:
@@ -237,14 +242,13 @@ class Note:
             )
             self.comment_user = comment_list_data['data']['comments'][comment_index]['user']['nickname'] if comment_list_data['data']['comments'] else ''
             self.first_comment_tag_v2 = comment_list_data['data']['comments'][comment_index]['show_tags_v2'][0]['text'] if comment_list_data['data']['comments'][comment_index]['show_tags_v2'] else ''
+        if anchorCommentId:
+            self.comments_with_context = extract_anchor_comment_id(comment_list_data['data'])
+            bot_logger.debug(f"Comments with context extracted for anchorCommentId {anchorCommentId}:\n{pformat(self.comments_with_context)}")
         self.length: int = len(self.desc + self.title + self.first_comment)
 
         self.tags: list[str] = [tag['name'] for tag in note_data['data'][0]['note_list'][0]['hash_tag']]
         self.tag_string: str = ' '.join([f"#{tag}" for tag in self.tags])
-
-        self.share_content: str = self.desc[:60]
-        self.share_content = re.sub(r'(#\S+)', '', self.share_content)
-        self.share_content += "..." if self.share_content.strip().strip('#') and not self.share_content.endswith("...") and len(self.desc) > 60 else ""
 
         self.thumbnail = note_data['data'][0]['note_list'][0]['share_info']['image']
         self.images_list: list[dict[str, str]] = []
@@ -339,7 +343,19 @@ class Note:
         else:
             ipaddr_html = 'Unknown IP Address'
         html += f'<p>📍 {ipaddr_html}</p>'
-        # html += '<br><i>via</i> <a href="https://t.me/xhsfeedbot">@xhsfeedbot</a>'
+        if self.comments_with_context:
+            for comment in self.comments_with_context:
+                html += f'<h4>💬 <a href="https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""}">Comment</a></h4>'
+                html += f'<p>👤 <a href="https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]}"> @{comment["user"]["nickname"]} ({comment["user"]["red_id"]})</a>'
+                if 'target_comment' in comment:
+                    html += f" -> " + f'<a href="https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}"> @{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})</a>' + '</p>'
+                else:
+                    html += '</p>'
+                html += f'<p>{tg_msg_escape_html(comment["content"])}</p>'
+                for pic in comment['pictures']:
+                    html += f'<img src="{re.sub(r'sns-note-i\d.xhscdn.com', 'sns-na-i6.xhscdn.com', pic).split('?imageView')[0]}"></img>'
+                html += f'<p>❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]} 📍 {tg_msg_escape_html(comment["ip_location"])} {get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}</p>'
+                # html += f'<img src="{comment["user"]["images"]}"></img>'
         self.html = html
         bot_logger.debug(f"HTML generated, \n\n{self.html}\n\n")
         return self.html
@@ -408,54 +424,29 @@ class Note:
         else:
             ip_html = 'Unknown IP Address'
         message += f'>📍 {ip_html}\n'
-        comment_tag = ''
-        if hasattr(self, 'first_comment_tag_v2'):
-            if self.first_comment_tag_v2:
-                comment_tag = f'[{self.first_comment_tag_v2}]'
-        message += self.make_block_quotation(
-            f'🗨️ @{self.comment_user} {comment_tag}\n'
-            f'{self.first_comment}'
-        ) if self.first_comment else ''
+        if self.comments_with_context:
+            comment_text = ''
+            for comment in self.comments_with_context:
+                comment_text += f'💬 [Comment](https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""})'
+                comment_text += f'{tg_msg_escape_markdown_v2(comment["content"])}'
+                for _, pic in enumerate(comment['pictures']):
+                    comment_text += f'[Photo {_}]({pic})'
+                comment_text += f'❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]} 📍 {tg_msg_escape_markdown_v2(comment["ip_location"])} {get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}'
+                comment_text += f'👤 [@{comment["user"]["nickname"]} ({comment["user"]["red_id"]})](https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]})'
+                if 'target_comment' in comment:
+                    comment_text += f"{tg_msg_escape_markdown_v2(" -> ")}" + f'[@{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})](https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]})'
+        else:
+            comment_tag = ''
+            if hasattr(self, 'first_comment_tag_v2'):
+                if self.first_comment_tag_v2:
+                    comment_tag = f'[{self.first_comment_tag_v2}]'
+            message += self.make_block_quotation(
+                f'🗨️ @{self.comment_user} {comment_tag}\n'
+                f'{self.first_comment}'
+            ) if self.first_comment else ''
         message += '\n_via_ @xhsfeedbot'
         self.message = message
         bot_logger.debug(f"Telegram message generated, \n\n{self.message}\n\n")
-        return message
-
-    async def to_short_preview(self):
-        message = ''
-        message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*\n'
-        message += f'{self.make_block_quotation(self.desc[:166] + '...')}\n'
-        if hasattr(self, 'telegraph_url'):
-            message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n'
-        else:
-            message += f'📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n'
-        message += f'[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n\n'
-        if type(self.liked_count) == str:
-            like_html = tg_msg_escape_markdown_v2(self.liked_count)
-        else:
-            like_html = self.liked_count
-        if type(self.collected_count) == str:
-            collected_html = tg_msg_escape_markdown_v2(self.collected_count)
-        else:
-            collected_html = self.collected_count
-        if type(self.comments_count) == str:
-            comments_html = tg_msg_escape_markdown_v2(self.comments_count)
-        else:
-            comments_html = self.comments_count
-        if type(self.shared_count) == str:
-            shared_html = tg_msg_escape_markdown_v2(self.shared_count)
-        else:
-            shared_html = self.shared_count
-        message += f'>❤️ {like_html} ⭐ {collected_html} 💬 {comments_html} 🔗 {shared_html}'
-        message += f'\n>{get_time_emoji(self.time)} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(self.time))}\n'
-        if hasattr(self, 'ip_location'):
-            ip_html = tg_msg_escape_markdown_v2(self.ip_location)
-        else:
-            ip_html = 'Unknown IP Address'
-        message += f'>📍 {ip_html}'
-        message += '\n_via_ @xhsfeedbot'
-        self.short_preview = message
-        bot_logger.debug(f"Short preview generated, {self.short_preview}")
         return message
 
     async def to_media_group(self) -> list[list[InputMediaPhoto | InputMediaVideo]]:
@@ -573,16 +564,16 @@ def tg_msg_escape_markdown_v2(t: str | int) -> str:
         t = t.replace(i, "\\" + i)
     return t
 
-def open_note(noteId: str, connected_ssh_client: paramiko.SSHClient | None = None):
+def open_note(noteId: str, connected_ssh_client: paramiko.SSHClient | None = None, anchorCommentId: str | None = None):
     if os.getenv('TARGET_DEVICE_TYPE') == '0':
-        subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}"])
+        subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')])
     elif os.getenv('TARGET_DEVICE_TYPE') == '1':
         if connected_ssh_client:
             _, _, _ = connected_ssh_client.exec_command(
-                f"uiopen xhsdiscover://item/{noteId}"
+                f"uiopen xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')
             )
         else:
-            subprocess.run(["uiopen", f"xhsdiscover://item/{noteId}"])
+            subprocess.run(["uiopen", f"xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')])
 
 def home_page(connected_ssh_client: paramiko.SSHClient | None = None):
     if os.getenv('TARGET_DEVICE_TYPE') == '0':
@@ -599,15 +590,18 @@ def get_url_info(message_text: str) -> dict[str, str | bool]:
     xsec_token = ''
     urls = re.findall(URL_REGEX, message_text)
     bot_logger.info(f'URLs:\n{urls}')
+    anchorCommentId = ''
     if len(urls) == 0:
         bot_logger.debug("NO URL FOUND!")
-        return {'success': False, 'msg': 'No URL found in the message.', 'noteId': '', 'xsec_token': ''}
+        return {'success': False, 'msg': 'No URL found in the message.', 'noteId': '', 'xsec_token': '', 'anchorCommentId': ''}
     elif re.findall(r"[a-z0-9]{24}", message_text) and not re.findall(r"user/profile/[a-z0-9]{24}", message_text):
         noteId = re.findall(r"[a-z0-9]{24}", message_text)[0]
         note_url = [u for u in urls if re.findall(r"[a-z0-9]{24}", u) and not re.findall(r"user/profile/[a-z0-9]{24}", u)][0]
         parsed_url = urlparse(str(note_url))
         if 'xsec_token' in parse_qs(parsed_url.query):
             xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
+        if 'anchorCommentId' in parse_qs(parsed_url.query):
+            anchorCommentId = parse_qs(parsed_url.query)['anchorCommentId'][0]
     elif 'xhslink.com' in message_text or 'xiaohongshu.com' in message_text:
         xhslink = [u for u in urls if 'xhslink.com' in u][0]
         bot_logger.debug(f"URL found: {xhslink}")
@@ -624,21 +618,79 @@ def get_url_info(message_text: str) -> dict[str, str | bool]:
             parsed_url = urlparse(str(redirectPath))
             if 'xsec_token' in parse_qs(parsed_url.query):
                 xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
+            if 'anchorCommentId' in parse_qs(parsed_url.query):
+                anchorCommentId = parse_qs(parsed_url.query)['anchorCommentId'][0]
         elif re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/[0-9a-z]+", xhslink):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/discovery\/item\/([a-z0-9]+)", xhslink)[0]
             parsed_url = urlparse(str(xhslink))
             if 'xsec_token' in parse_qs(parsed_url.query):
                 xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
+            if 'anchorCommentId' in parse_qs(parsed_url.query):
+                anchorCommentId = parse_qs(parsed_url.query)['anchorCommentId'][0]
         elif re.findall(r"https?://(?:www.)?xiaohongshu.com/explore/[a-z0-9]+", message_text):
             noteId = re.findall(r"https?:\/\/(?:www.)?xiaohongshu.com\/explore\/([a-z0-9]+)", xhslink)[0]
             parsed_url = urlparse(str(xhslink))
             if 'xsec_token' in parse_qs(parsed_url.query):
                 xsec_token = parse_qs(parsed_url.query)['xsec_token'][0]
+            if 'anchorCommentId' in parse_qs(parsed_url.query):
+                anchorCommentId = parse_qs(parsed_url.query)['anchorCommentId'][0]
         else:
             return {'success': False, 'msg': 'Invalid URL or the note is no longer available.', 'noteId': '', 'xsec_token': ''}
     else:
-        return {'success': False, 'msg': 'Invalid URL or the note is no longer available.', 'noteId': '', 'xsec_token': ''}
-    return {'success': True, 'msg': 'Success.', 'noteId': noteId, 'xsec_token': xsec_token}
+        return {'success': False, 'msg': 'Invalid URL.', 'noteId': '', 'xsec_token': ''}
+    return {'success': True, 'msg': 'Success.', 'noteId': noteId, 'xsec_token': xsec_token, 'anchorCommentId': anchorCommentId}
+
+def parse_comment(comment_data: dict[str, Any]):
+    target_comment = comment_data.get('target_comment', {})
+    user = comment_data.get('user', {})
+    content = comment_data.get('content', '')
+    pictures = comment_data.get('pictures', [])
+    pictures = [p['origin_url'] for p in pictures]
+    id = comment_data.get('id', '')
+    time = comment_data.get('time', 0)
+    like_count = comment_data.get('like_count', 0)
+    sub_comment_count = comment_data.get('sub_comment_count', 0)
+    ip_location = comment_data.get('ip_location', 'Unknown IP Address')
+    data: dict[str, Any] = {
+        'user': user,
+        'content': content,
+        'pictures': pictures,
+        'id': id,
+        'time': time,
+        'like_count': like_count,
+        'sub_comment_count': sub_comment_count,
+        'ip_location': ip_location,
+    }
+    if target_comment:
+        data['target_comment'] = target_comment
+    return data
+
+def extract_anchor_comment_id(json_data: dict[str, Any]) -> list[dict[str, Any]]:
+    comments = json_data.get('comments', [])
+    if not comments:
+        bot_logger.error("No comments found in the data.")
+        bot_logger.error(f"JSON data: {pformat(json_data)}")
+        raise Exception("No comments found in the data.")
+    comment = comments[0]
+    sub_comments = comment.get('sub_comments', [])
+    related_sub_comments: list[dict[str, Any]] = []
+    if 'page_context' in json_data:
+        page_context = json_data.get('page_context', '')
+        if page_context:    
+            page_context = json.loads(page_context)
+            key_comments_id = page_context.get('top', [])
+            for key in key_comments_id:
+                for sub_comment in sub_comments:
+                    if sub_comment.get('id', '') == key:
+                        related_sub_comments.append(sub_comment)
+    all_comments = [comment] + related_sub_comments
+
+    data_parsed: list[dict[str, Any]] = []
+
+    for c in all_comments:
+        parsed_comment = parse_comment(c)
+        data_parsed.append(parsed_comment)
+    return data_parsed
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id if update.effective_user else None
@@ -763,7 +815,32 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat = update.effective_chat
     if not chat:
         return
-    message_text = update.message.text if update.message and update.message.text is not None else ""
+    message_text = str(update.message.text if update.message and update.message.text is not None else "")
+
+    # If there is a photo, try to decode QR code
+    if msg.photo:
+        try:
+            # Get the highest resolution photo
+            photo_file = await msg.photo[-1].get_file()
+            
+            # Download to memory
+            img_byte_arr: BytesIO = BytesIO()
+            await photo_file.download_to_memory(img_byte_arr)
+            img_byte_arr.seek(0)
+
+            # Decode QR code
+            image = Image.open(img_byte_arr)
+            decoded_objects: list[Any] = decode(image) # pyright: ignore[reportUnknownVariableType]
+
+            for obj in decoded_objects:
+                if obj.type == 'QRCODE':
+                    qr_data = obj.data.decode("utf-8")
+                    bot_logger.info(f"QR Code detected: {qr_data}")
+                    # Append decoded URL to message text so it gets processed
+                    message_text += f" {qr_data}"
+        except Exception as e:
+            bot_logger.error(f"Failed to decode QR code: {e}")
+                    
     live = bool(re.search(r"[^\S]+-l(?!\S)", message_text))
     with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
     with_full_data = bool(re.search(r"[^\S]+-m(?!\S)", message_text))
@@ -777,7 +854,8 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     noteId = str(url_info['noteId'])
     xsec_token = str(url_info['xsec_token'])
-    bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}')
+    anchorCommentId = str(url_info['anchorCommentId'])
+    bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}, anchorCommentId: {anchorCommentId if anchorCommentId else "None"}')
     if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -796,7 +874,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         ssh = None
     bot_logger.debug('try open note on device')
-    open_note(noteId, ssh)
+    open_note(noteId, ssh, anchorCommentId=anchorCommentId)
     await asyncio.sleep(0.75)
     home_page(ssh)
     if ssh:
@@ -813,7 +891,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
         times = 0
-        if with_full_data:
+        if with_full_data or anchorCommentId:
             while True:
                 times += 1
                 try:
@@ -858,7 +936,8 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             telegraph=True,
             with_xsec_token=with_xsec_token,
             original_xsec_token=xsec_token,
-            telegraph_account=telegraph_account
+            telegraph_account=telegraph_account,
+            anchorCommentId=anchorCommentId
         )
         await note.initialize()
         if with_full_data:
@@ -946,6 +1025,9 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     noteId = str(url_info['noteId'])
     xsec_token = str(url_info['xsec_token'])
     bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}')
+    anchorCommentId = str(url_info['anchorCommentId'])
+    bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}, anchorCommentId: {anchorCommentId if anchorCommentId else "None"}')
+
     if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -964,7 +1046,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     else:
         ssh = None
     bot_logger.debug('try open note on device')
-    open_note(noteId, ssh)
+    open_note(noteId, ssh, anchorCommentId=anchorCommentId)
     await asyncio.sleep(0.6)
     home_page(ssh)
     if ssh:
@@ -1006,7 +1088,8 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
             telegraph=True,
             with_xsec_token=with_xsec_token,
             original_xsec_token=xsec_token,
-            telegraph_account=telegraph_account
+            telegraph_account=telegraph_account,
+            anchorCommentId=anchorCommentId
         )
         await note.initialize()
         telegraph_url = note.telegraph_url if hasattr(note, 'telegraph_url') else await note.to_telegraph()
@@ -1123,9 +1206,9 @@ def run_telegram_bot():
         application.add_error_handler(error_handler)
 
         note2feed_handler = MessageHandler(
-            filters.TEXT & (~ filters.COMMAND) & (
-                filters.Entity(MessageEntity.URL) |
-                filters.Entity(MessageEntity.TEXT_LINK)
+            (~ filters.COMMAND) & (
+                (filters.TEXT & (filters.Entity(MessageEntity.URL) | filters.Entity(MessageEntity.TEXT_LINK))) |
+                filters.PHOTO
             ),
             note2feed
         )
