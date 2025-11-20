@@ -790,13 +790,10 @@ Link without `xsec_token` parameter is supported\\.
 Telegraph link without media group as default output\\.
 
 *Parameters*
-`\\-l`  Output Telegram message media group and Telegraph media with live photo video\\.
 `\\-x`  Note link with `xsec_token`\\.
-`\\-m`  Output note media and content as direct Telegram messages \\(may consume more time\\)\\.
 
 *Inline mode*
-Use `@xhsfeedbot <note link>` in any chat to get a short preview of the note\\.
-`\\-m` parameter is not supported in inline mode\\.
+Use `@xhsfeedbot <note link>` in any chat to get a short preview of the note in Telegraph page\\.
 
 *Commands*
 `/start` \\- Start chat with @xhsfeedbot\\.

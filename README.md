@@ -54,21 +54,32 @@ SSH_PORT=22 # device ssh port, defaut 22
 SSH_USERNAME=root
 SSH_PASSWORD=alpine
 # Default user name and password for jailbroken iOS. You may have to configure your own.
+
+WHITELIST_ENABLED=true
 ```
+
+If you want to enable whitelist, create a `whitelist.json` file.
+
+```
+{
+  "users": [
+    101010101,
+    010101010
+  ]
+}
+```
+
 Open three terminal windows or use `screen`, start all three scripts.
 ```bash
-source .venv/bin/activate
-# export https_proxy if necessary.
+# export https_proxy when necessary.
 python xhsfeedbot.py
 ```
 
 ```bash
-source .venv/bin/activate
 python mitm_server.py
 ```
 
 ```bash
-source .venv/bin/activate
 python shared_server.py
 ```
 ### Device side
