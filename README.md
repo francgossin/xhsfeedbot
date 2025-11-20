@@ -59,8 +59,7 @@ WHITELIST_ENABLED=true
 ```
 
 If you want to enable whitelist, create a `whitelist.json` file.
-
-```
+```json
 {
   "users": [
     101010101,
