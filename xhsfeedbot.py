@@ -642,7 +642,7 @@ class Note:
                                 media=media,
                                 disable_notification=True
                             )
-                if comment.get('audio_url', ''):
+                elif comment.get('audio_url', ''):
                     await bot.send_chat_action(
                         chat_id=chat_id,
                         action=ChatAction.RECORD_VOICE
