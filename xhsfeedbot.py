@@ -36,12 +36,16 @@ from telegram import (
     InputMediaVideo,
     LinkPreviewOptions,
     InlineQueryResultArticle,
+    Message
 )
 from telegram.error import (
     NetworkError,
     BadRequest
 )
-from telegram.constants import ParseMode
+from telegram.constants import (
+    ParseMode,
+    ChatAction,
+)
 from telegraph.aio import Telegraph # type: ignore
 from PIL import Image
 from pyzbar.pyzbar import decode # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs]
@@ -430,30 +434,79 @@ class Note:
             #         )
             #     )
         if self.video_url:
+            video_data = requests.get(self.video_url).content
             self.medien.append(
-                InputMediaVideo(requests.get(self.video_url).content)
+                InputMediaVideo(video_data)
             )
         self.medien_parts = [self.medien[i:i + 10] for i in range(0, len(self.medien), 10)]
         return self.medien_parts
 
-    async def send_as_telegram_message(self, bot: Bot, chat_id: int, reply_to_message_id: int = 0) -> None:
+    async def send_as_telegram_message(self, bot: Bot, chat_id: int, reply_to_message_id: int = 0, status: Message | None = None, status_md: str | None = None) -> tuple[Message | None, str | None]:
         sent_message = None
+        if status and status_md is not None:
+            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Sending media group message`"
+            await status.edit_text(
+                status_md,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
         if not hasattr(self, 'medien_parts'):
+            if status and status_md is not None:
+                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Preparing media group`"
+                await status.edit_text(
+                    status_md,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
             self.medien_parts: list[list[InputMediaPhoto | InputMediaVideo]] = await self.to_media_group()
         for i, part in enumerate(self.medien_parts):
+            if status and status_md is not None:
+                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Sending media group part {i + 1} of {len(self.medien_parts)}`"
+                await status.edit_text(
+                    status_md,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
+                if self.video_url:
+                    await bot.send_chat_action(
+                        chat_id=chat_id,
+                        action=ChatAction.UPLOAD_VIDEO,
+                    )
+                else:
+                    await bot.send_chat_action(
+                        chat_id=chat_id,
+                        action=ChatAction.UPLOAD_PHOTO,
+                    )
             if i != len(self.medien_parts) - 1:
                 try:
                     sent_message = await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
                         media=part,
+                        disable_notification=True
                     )
                 except:
                     bot_logger.error(f"Failed to send media group:\n{traceback.format_exc()}")
+                    if status and status_md is not None:
+                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying with downloaded media`"
+                        await status.edit_text(
+                            status_md,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                        )
                     media: list[InputMediaPhoto | InputMediaVideo] = []
-                    for p in part:
+                    for _, p in enumerate(part):
                         if type(p.media) == str and '.mp4' not in p.media:
-                            media.append(InputMediaPhoto(requests.get(p.media).content))
+                            media_content = requests.get(p.media).content
+                            if status and status_md is not None:
+                                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Downloaded media {_ + 1} of {len(part)}`"
+                                await status.edit_text(
+                                    status_md,
+                                    parse_mode=ParseMode.MARKDOWN_V2,
+                                )
+                            media.append(InputMediaPhoto(media_content))
+                    if status and status_md is not None:
+                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying upload of media group part {i + 1} of {len(self.medien_parts)}`"
+                        await status.edit_text(
+                            status_md,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                        )
                     sent_message = await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
@@ -472,14 +525,34 @@ class Note:
                             preview=bool(self.length >= 666)
                         ),
                         parse_mode=ParseMode.MARKDOWN_V2,
+                        disable_notification=True
                     )
                 except:
                     bot_logger.error(f"Failed to send media group:\n{pformat(part)}\n{traceback.format_exc()}")
+                    if status and status_md is not None:
+                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying with downloaded media`"
+                        await status.edit_text(
+                            status_md,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                        )
                     media: list[InputMediaPhoto | InputMediaVideo] = []
-                    for p in part:
+                    for _, p in enumerate(part):
                         if type(p.media) == str and '.mp4' not in p.media:
-                            media.append(InputMediaPhoto(requests.get(p.media).content))
+                            media_content = requests.get(p.media).content
+                            if status and status_md is not None:
+                                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Downloaded media {_ + 1} of {len(part)}`"
+                                await status.edit_text(
+                                    status_md,
+                                    parse_mode=ParseMode.MARKDOWN_V2,
+                                )
+                            media.append(InputMediaPhoto(media_content))
                     bot_logger.debug(f"Retrying with downloaded media:\n{pformat(media)}")
+                    if status and status_md is not None:
+                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying upload of media group part {i + 1} of {len(self.medien_parts)}`"
+                        await status.edit_text(
+                            status_md,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                        )
                     sent_message = await bot.send_media_group(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
@@ -494,11 +567,23 @@ class Note:
                     )
         if not sent_message:
             bot_logger.error("No message was sent!")
-            return
+            return status, status_md
         reply_id: int = sent_message[0].message_id
         comment_id_to_message_id: dict[str, Any] = {}
         if self.comments_with_context:
+            if status and status_md is not None:
+                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Start sending comments`"
+                await status.edit_text(
+                    status_md,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
             for _, comment in enumerate(self.comments_with_context):
+                if status and status_md is not None:
+                    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Sending comment {_ + 1} of {len(self.comments_with_context)}`"
+                    await status.edit_text(
+                        status_md,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                    )
                 comment_text = ''
                 comment_text += f'💬 [Comment](https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""})'
                 if 'target_comment' in comment:
@@ -512,13 +597,30 @@ class Note:
                 if 'target_comment' in comment and _ > 0:
                     reply_id = comment_id_to_message_id[comment['target_comment']['id']].message_id
                 if comment['pictures']:
+                    await bot.send_chat_action(
+                        chat_id=chat_id,
+                        action=ChatAction.UPLOAD_PHOTO
+                    )
                     # 1. Split pictures into chunks of 10
                     picture_chunks = [comment['pictures'][i:i + 10] for i in range(0, len(comment['pictures']), 10)]
                     for i, chunk in enumerate(picture_chunks):
                         media: list[InputMediaPhoto | InputMediaVideo] = []
                         for pic in chunk:
                             if 'mp4' not in pic:
-                                media.append(InputMediaPhoto(requests.get(pic).content))
+                                if status and status_md is not None:
+                                    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Downloading picture {_ + 1} of {len(comment['pictures'])}`"
+                                    await status.edit_text(
+                                        status_md,
+                                        parse_mode=ParseMode.MARKDOWN_V2,
+                                    )
+                                media_data = requests.get(pic).content
+                                media.append(InputMediaPhoto(media_data))
+                        if status and status_md is not None:
+                            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Uploading picture chunk {i + 1} of {len(picture_chunks)}`"
+                            await status.edit_text(
+                                status_md,
+                                parse_mode=ParseMode.MARKDOWN_V2,
+                            )
                         # 2. Check if this is the LAST chunk
                         if i == len(picture_chunks) - 1:
                             # Send the last chunk WITH the caption
@@ -527,7 +629,8 @@ class Note:
                                 reply_to_message_id=reply_id,
                                 media=media,
                                 caption=comment_text,
-                                parse_mode=ParseMode.MARKDOWN_V2
+                                parse_mode=ParseMode.MARKDOWN_V2,
+                                disable_notification=True
                             )
                             # 3. Store ONLY the first message object so .message_id works later
                             comment_id_to_message_id[comment['id']] = sent_messages[0]
@@ -537,28 +640,65 @@ class Note:
                                 chat_id=chat_id,
                                 reply_to_message_id=reply_id,
                                 media=media,
+                                disable_notification=True
                             )
-                elif comment.get('audio_url', ''):
+                if comment.get('audio_url', ''):
+                    await bot.send_chat_action(
+                        chat_id=chat_id,
+                        action=ChatAction.RECORD_VOICE
+                    )
+                    # Download audio
+                    if status and status_md is not None:
+                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Downloading audio for comment {_ + 1} of {len(self.comments_with_context)}`"
+                        await status.edit_text(
+                            status_md,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                        )
                     r = requests.get(comment['audio_url'])
                     audio_bytes = r.content
 
                     # Convert to Ogg/Opus
+                    if status and status_md is not None:
+                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Converting to Ogg/Opus for comment {_ + 1} of {len(self.comments_with_context)}`"
+                        await status.edit_text(
+                            status_md,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                        )
                     ogg_bytes = convert_to_ogg_opus_pipe(audio_bytes)
+                    if status and status_md is not None:
+                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Sending voice for comment {_ + 1} of {len(self.comments_with_context)}`"
+                        await status.edit_text(
+                            status_md,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                        )
                     comment_id_to_message_id[comment['id']] = await bot.send_voice(
                         chat_id=chat_id,
                         voice=ogg_bytes,
                         reply_to_message_id=reply_id,
                         caption=comment_text,
-                        parse_mode=ParseMode.MARKDOWN_V2
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        disable_notification=True
                     )
                 else:
+                    await bot.send_chat_action(
+                        chat_id=chat_id,
+                        action=ChatAction.TYPING
+                    )
+                    if status and status_md is not None:
+                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Sending text comment {_ + 1} of {len(self.comments_with_context)}`"
+                        await status.edit_text(
+                            status_md,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                        )
                     comment_id_to_message_id[comment['id']] = await bot.send_message(
                         chat_id=chat_id,
                         reply_to_message_id=reply_id,
                         text=comment_text,
                         parse_mode=ParseMode.MARKDOWN_V2,
-                        disable_web_page_preview=True
+                        disable_web_page_preview=True,
+                        disable_notification=True
                     )
+        return status, status_md
 
 def get_redirected_url(url: str) -> str:
     return unquote(requests.get(url if 'http' in url else f'http://{url}').url.split("redirectPath=")[-1])
@@ -823,7 +963,8 @@ Group privacy is on\\. You need to send command to bot manually or add bot as ad
                 chat_id=chat.id,
                 text=help_msg,
                 parse_mode=ParseMode.MARKDOWN_V2,
-                disable_web_page_preview=True
+                disable_web_page_preview=True,
+                disable_notification=True
             )
             update_network_status(success=True)
         except Exception as e:
@@ -856,11 +997,13 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Internal note processing function"""
     user_id = update.effective_user.id if update.effective_user else None
     
+    chat = update.effective_chat
+    if not chat:
+        return
     # Check whitelist
     if not is_user_whitelisted(user_id):
         bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
         msg = update.message
-        chat = update.effective_chat
         # if msg and chat:
         #     try:
         #         await context.bot.send_message(
@@ -871,18 +1014,30 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         #     except Exception as e:
         #         bot_logger.error(f"Failed to send unauthorized message: {e}")
         return
-    
+
     msg = update.message
     if not msg:
         return
-    chat = update.effective_chat
-    if not chat:
-        return
     message_text = str(update.message.text if update.message and update.message.text is not None else "")
-
+    now_timestamp = int(datetime.timestamp(datetime.now()))
+    await context.bot.send_chat_action(
+        chat_id=chat.id,
+        action=ChatAction.TYPING
+    )
+    status_md = f"{get_time_emoji(now_timestamp)} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(now_timestamp))} \\> `Received your message, processing...`"
+    status = await msg.reply_text(
+        status_md,
+        parse_mode=ParseMode.MARKDOWN_V2,
+        disable_notification=True
+    )
     # If there is a photo, try to decode QR code
     if msg.photo:
         try:
+            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Decoding QR code from the photo`"
+            await status.edit_text(
+                status_md,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
             # Get the lowest resolution photo
             photo_file = await msg.photo[-1].get_file()
             
@@ -901,6 +1056,12 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
                     bot_logger.info(f"QR Code detected: {qr_data}")
                     # Append decoded URL to message text so it gets processed
                     message_text += f" {qr_data} "
+                    
+                    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `QR code decoded successfully: {tg_msg_escape_markdown_v2(qr_data)}`"
+                    await status.edit_text(
+                        status_md,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                    )
         except Exception as e:
             bot_logger.error(f"Failed to decode QR code: {e}")
 
@@ -913,12 +1074,33 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.bot.send_message(
             chat_id=chat.id,
             text=str(url_info['msg']),
-            reply_to_message_id=msg.message_id
+            reply_to_message_id=msg.message_id,
+            disable_notification=True
         )
         return
+    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Get URL info successfully`"
+    await status.edit_text(
+        status_md,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
     noteId = str(url_info['noteId'])
+    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Note ID: {tg_msg_escape_markdown_v2(noteId)}`"
+    await status.edit_text(
+        status_md,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
     xsec_token = str(url_info['xsec_token'])
+    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `xsec_token: {tg_msg_escape_markdown_v2(xsec_token) if xsec_token else "None"}`"
+    await status.edit_text(
+        status_md,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
     anchorCommentId = str(url_info['anchorCommentId'])
+    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `anchorCommentId: {tg_msg_escape_markdown_v2(anchorCommentId) if anchorCommentId else "None"}`"
+    await status.edit_text(
+        status_md,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
     bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}, anchorCommentId: {anchorCommentId if anchorCommentId else "None"}')
     if os.getenv('TARGET_DEVICE_TYPE') == '1':
         ssh = paramiko.SSHClient()
@@ -938,6 +1120,11 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         ssh = None
     bot_logger.debug('try open note on device')
+    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Parsing Note`"
+    await status.edit_text(
+        status_md,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
     open_note(noteId, ssh, anchorCommentId=anchorCommentId)
     await asyncio.sleep(0.75)
     home_page(ssh)
@@ -954,6 +1141,11 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
+        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Fetch note data successfully`"
+        await status.edit_text(
+            status_md,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
         times = 0
         if anchorCommentId:
             while True:
@@ -966,6 +1158,11 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
                         json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
                         f.close()
                     bot_logger.debug('got comment list data')
+                    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Fetch comment list data successfully`"
+                    await status.edit_text(
+                        status_md,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                    )
                     break
                 except:
                     if times <= 3:
@@ -979,12 +1176,17 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
     if note_data['data']['data'][0]['note_list'][0]['model_type'] == 'error':
         bot_logger.warning(f'Note data not available\n{note_data['data']}')
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=f"{note_data['data']['data'][0]['note_list'][0]['text']}\nThe note may be deleted or the account is private.\nIf you think this is an error, please contact the bot owner.\n\nNote URL: https://www.xiaohongshu.com/discovery/item/{noteId}\nAuthor URL: https://www.xiaohongshu.com/user/profile/{note_data['data']['data'][0]['note_list'][0]['user_id']}",
-            reply_to_message_id=msg.message_id
+        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Note data not available`"
+        await status.edit_text(
+            status_md,
+            parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
+    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Start parsing and sending note`"
+    await status.edit_text(
+        status_md,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
 
     try:
         try:
@@ -1004,15 +1206,29 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             anchorCommentId=anchorCommentId
         )
         await note.initialize()
-        await note.send_as_telegram_message(context.bot, chat.id, msg.message_id)
+        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Parse note successfully`"
+        await status.edit_text(
+            status_md,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        status, status_md = await note.send_as_telegram_message(context.bot, chat.id, msg.message_id, status, status_md)
+        if status and status_md is not None:
+            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Note sent successfully`"
+            await status.edit_text(
+                status_md,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
         update_network_status(success=True)  # Successfully sent message
+        if status:
+            await status.delete()
     except Exception as e:
         try:
-            await context.bot.send_message(
-                chat_id=chat.id,
-                text="An error occurred while processing your request.",
-                reply_to_message_id=msg.message_id
-            )
+            if status and status_md is not None:
+                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Failed to send note:`\n```python\n{tg_msg_escape_markdown_v2(str(e))}\n```"
+                await status.edit_text(
+                    status_md,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
             update_network_status(success=True)
         except Exception as send_error:
             bot_logger.error(f"Failed to send error message: {send_error}")
