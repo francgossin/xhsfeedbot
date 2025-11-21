@@ -1072,7 +1072,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     if msg.caption:
         message_text += f" {msg.caption} "
 
-    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text)) and bool(user_id in whitelisted_users)
     url_info = get_url_info(message_text)
     if not url_info['success']:
         await context.bot.send_message(
@@ -1312,7 +1312,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     message_text = inline_query.query
     if not message_text:
         return
-    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text)) and bool(user_id in whitelisted_users)
     url_info = get_url_info(message_text)
     if not url_info['success']:
         return
