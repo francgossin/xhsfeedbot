@@ -4,7 +4,6 @@ import re
 import json
 import time
 import asyncio # type: ignore
-import random
 import logging
 import psutil
 import requests
@@ -82,6 +81,7 @@ processing_semaphore = asyncio.Semaphore(max_concurrent_requests)
 
 # Whitelist functionality
 whitelist_enabled = os.getenv('WHITELIST_ENABLED', 'false').lower() == 'true'
+bot_logger.debug(f"Whitelist enabled: {whitelist_enabled}")
 whitelisted_users = []
 
 def load_whitelist():
@@ -213,7 +213,7 @@ class Note:
         bot_logger.debug(f"Note raw_desc\n\n {self.raw_desc}")
         self.desc = re.sub(
             r'(?P<tag>#\S+?)\[\S+\]#',
-            r' \g<tag> ',
+            r'\g<tag> ',
             self.raw_desc
         )
         self.time = note_data['data'][0]['note_list'][0]['time']
@@ -224,28 +224,11 @@ class Note:
         self.shared_count = note_data['data'][0]['note_list'][0]['shared_count']
         self.liked_count = note_data['data'][0]['note_list'][0]['liked_count']
         # self.last_update_time = note_data['data'][0]['note_list'][0]['last_update_time']
-        self.first_comment = ''
         self.comments_with_context: list[dict[str, Any]] = []
-        if int(self.comments_count) and comment_list_data:
-            nonblank_comments_index = [c for c in range(len(comment_list_data['data']['comments'])) if comment_list_data['data']['comments'][c]['content']]
-            if nonblank_comments_index:
-                comment_index = nonblank_comments_index[0]
-            else:
-                comment_index = random.choice(nonblank_comments_index)
-            self.first_comment = replace_redemoji_with_emoji(
-                comment_list_data['data']['comments'][comment_index]['content']
-            )
-            self.first_comment = re.sub(
-                r'#(?P<tag_text>\S+?)\[\S+\]#',
-                r'\g<tag_text>',
-                self.first_comment
-            )
-            self.comment_user = comment_list_data['data']['comments'][comment_index]['user']['nickname'] if comment_list_data['data']['comments'] else ''
-            self.first_comment_tag_v2 = comment_list_data['data']['comments'][comment_index]['show_tags_v2'][0]['text'] if comment_list_data['data']['comments'][comment_index]['show_tags_v2'] else ''
         if anchorCommentId:
             self.comments_with_context = extract_anchor_comment_id(comment_list_data['data'])
             bot_logger.debug(f"Comments with context extracted for anchorCommentId {anchorCommentId}:\n{pformat(self.comments_with_context)}")
-        self.length: int = len(self.desc + self.title + self.first_comment)
+        self.length: int = len(self.desc + self.title)
 
         self.tags: list[str] = [tag['name'] for tag in note_data['data'][0]['note_list'][0]['hash_tag']]
         self.tag_string: str = ' '.join([f"#{tag}" for tag in self.tags])
@@ -333,7 +316,7 @@ class Note:
             html += f'<video src="{self.video_url}"></video>'
         for lines in self.desc.split('\n'):
             line_html = tg_msg_escape_html(lines)
-            html += f'<p>{line_html}</p>'
+            html += f'<blockquote>{line_html}</blockquote>'
         html += f'<h4>👤 <a href="https://www.xiaohongshu.com/user/profile/{self.user["id"]}"> @{self.user["name"]} ({self.user["red_id"]})</a></h4>'
         html += f'<img src="{self.user["image"]}"></img>'
         html += f'<p>{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time)}</p>'
@@ -344,21 +327,23 @@ class Note:
             ipaddr_html = 'Unknown IP Address'
         html += f'<p>📍 {ipaddr_html}</p>'
         if self.comments_with_context:
-            for comment in self.comments_with_context:
+            html += '<hr>'
+            for i, comment in enumerate(self.comments_with_context):
                 html += f'<h4>💬 <a href="https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""}">Comment</a></h4>'
-                html += f'<p>👤 <a href="https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]}"> @{comment["user"]["nickname"]} ({comment["user"]["red_id"]})</a>'
                 if 'target_comment' in comment:
-                    html += f" -> " + f'<a href="https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}"> @{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})</a>' + '</p>'
-                else:
-                    html += '</p>'
-                html += f'<p>{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}</p>'
+                    html += f'<p>↪️ <a href="https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}"> @{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})</a></p>'
+                html += f'<blockquote>{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}</blockquote>'
                 for pic in comment['pictures']:
                     if 'mp4' in pic:
                         html += f'<video src="{pic}"></video>'
                     else:
                         html += f'<img src="{pic}"></img>'
+                if comment.get('audio_url', ''):
+                    html += f'<blockquote><a href="{comment["audio_url"]}">🎤 Voice</a></blockquote>'
                 html += f'<p>❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]} 📍 {tg_msg_escape_html(comment["ip_location"])} {get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}</p>'
-                # html += f'<img src="{comment["user"]["images"]}"></img>'
+                html += f'<p>👤 <a href="https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]}"> @{comment["user"]["nickname"]} ({comment["user"]["red_id"]})</a></p>'
+                if i != len(self.comments_with_context) - 1:
+                    html += f'<hr>'
         self.html = html
         bot_logger.debug(f"HTML generated, \n\n{self.html}\n\n")
         return self.html
@@ -427,15 +412,6 @@ class Note:
         else:
             ip_html = 'Unknown IP Address'
         message += f'>📍 {ip_html}\n'
-        comment_tag = ''
-        if hasattr(self, 'first_comment_tag_v2'):
-            if self.first_comment_tag_v2:
-                comment_tag = f'[{self.first_comment_tag_v2}]'
-        message += self.make_block_quotation(
-            f'🗨️ @{self.comment_user} {comment_tag}\n'
-            f'{self.first_comment}'
-        ) if self.first_comment else ''
-        message += '\n_via_ @xhsfeedbot'
         self.message = message
         bot_logger.debug(f"Telegram message generated, \n\n{self.message}\n\n")
         return message
@@ -526,7 +502,7 @@ class Note:
                 comment_text = ''
                 comment_text += f'💬 [Comment](https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""})'
                 if 'target_comment' in comment:
-                    comment_text += f'\nReply to [@{tg_msg_escape_markdown_v2(comment["target_comment"]["user"]["nickname"])} \\({tg_msg_escape_markdown_v2(comment["target_comment"]["user"]["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]})\n'
+                    comment_text += f'\n↪️ [@{tg_msg_escape_markdown_v2(comment["target_comment"]["user"]["nickname"])} \\({tg_msg_escape_markdown_v2(comment["target_comment"]["user"]["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]})\n'
                 else:
                     comment_text += '\n'
                 comment_text += f'{self.make_block_quotation(replace_redemoji_with_emoji(comment["content"]))}\n'
@@ -562,6 +538,19 @@ class Note:
                                 reply_to_message_id=reply_id,
                                 media=media,
                             )
+                elif comment.get('audio_url', ''):
+                    r = requests.get(comment['audio_url'])
+                    audio_bytes = r.content
+
+                    # Convert to Ogg/Opus
+                    ogg_bytes = convert_to_ogg_opus_pipe(audio_bytes)
+                    comment_id_to_message_id[comment['id']] = await bot.send_voice(
+                        chat_id=chat_id,
+                        voice=ogg_bytes,
+                        reply_to_message_id=reply_id,
+                        caption=comment_text,
+                        parse_mode=ParseMode.MARKDOWN_V2
+                    )
                 else:
                     comment_id_to_message_id[comment['id']] = await bot.send_message(
                         chat_id=chat_id,
@@ -682,6 +671,11 @@ def parse_comment(comment_data: dict[str, Any]):
     target_comment = comment_data.get('target_comment', {})
     user = comment_data.get('user', {})
     content = comment_data.get('content', '')
+    content = re.sub(
+        r'(?P<tag>#\S+?)\[\S+\]#',
+        r'\g<tag> ',
+        content
+    )
     pictures = comment_data.get('pictures', [])
     picture_urls: list[str] = []
     for p in pictures:
@@ -696,6 +690,12 @@ def parse_comment(comment_data: dict[str, Any]):
                             video_url = video_data['stream'][stream][0]['backup_urls'][0]
                             picture_urls.append(video_url)
         picture_urls.append(re.sub(r'sns-note-i\d.xhscdn.com', 'sns-na-i6.xhscdn.com', original_url).split('?imageView')[0])
+    audio_info = comment_data.get('audio_info', '')
+    audio_url = ''
+    if audio_info:
+        audio_data = audio_info.get('play_info', {})
+        if audio_data:
+            audio_url = audio_data.get('url', '')
     id = comment_data.get('id', '')
     time = comment_data.get('time', 0)
     like_count = comment_data.get('like_count', 0)
@@ -710,6 +710,7 @@ def parse_comment(comment_data: dict[str, Any]):
         'like_count': like_count,
         'sub_comment_count': sub_comment_count,
         'ip_location': ip_location,
+        'audio_url': audio_url,
     }
     if target_comment:
         data['target_comment'] = target_comment
@@ -741,6 +742,21 @@ def extract_anchor_comment_id(json_data: dict[str, Any]) -> list[dict[str, Any]]
         parsed_comment = parse_comment(c)
         data_parsed.append(parsed_comment)
     return data_parsed
+
+def convert_to_ogg_opus_pipe(input_bytes: bytes) -> bytes:
+    process = subprocess.Popen(
+        [
+            "ffmpeg", "-i", "pipe:0",
+            "-c:a", "libopus",
+            "-f", "ogg",
+            "pipe:1"
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    out, _ = process.communicate(input_bytes)
+    return out
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id if update.effective_user else None
