@@ -1159,24 +1159,6 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                 thumbnail_url=note.thumbnail
             )
         ]
-        if with_xsec_token:
-            inline_query_result.append(
-                InlineQueryResultArticle(
-                    id=str(uuid4()),
-                    title=note.title,
-                    input_message_content=InputTextMessageContent(
-                        message_text=f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({telegraph_url})",
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        link_preview_options=LinkPreviewOptions(
-                            is_disabled=False,
-                            url=telegraph_url,
-                            prefer_large_media=True
-                        ),
-                    ),
-                    description="Telegraph URL with xiaohongshu.com URL (no xsec_token)",
-                    thumbnail_url=note.thumbnail
-                )
-            )
         await context.bot.answer_inline_query(
             inline_query_id=inline_query.id,
             results=inline_query_result
