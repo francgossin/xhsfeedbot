@@ -501,6 +501,8 @@ class Note:
                                     parse_mode=ParseMode.MARKDOWN_V2,
                                 )
                             media.append(InputMediaPhoto(media_content))
+                        elif self.video_url and type(p.media) != str:
+                            media.append(p)
                     if status and status_md is not None:
                         status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying upload of media group part {i + 1} of {len(self.medien_parts)}`"
                         await status.edit_text(
@@ -546,6 +548,8 @@ class Note:
                                     parse_mode=ParseMode.MARKDOWN_V2,
                                 )
                             media.append(InputMediaPhoto(media_content))
+                        elif self.video_url and type(p.media) != str:
+                            media.append(p)
                     bot_logger.debug(f"Retrying with downloaded media:\n{pformat(media)}")
                     if status and status_md is not None:
                         status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying upload of media group part {i + 1} of {len(self.medien_parts)}`"
@@ -1211,14 +1215,39 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             status_md,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        status, status_md = await note.send_as_telegram_message(context.bot, chat.id, msg.message_id, status, status_md)
-        if status and status_md is not None:
-            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Note sent successfully`"
+        try:
+            # reply with rich text when sending media failed
+            await context.bot.send_chat_action(
+                chat_id=chat.id,
+                action=ChatAction.TYPING
+            )
+            if not note.telegraph_url:
+                await note.to_telegraph()
+            telegraph_msg = await context.bot.send_message(
+                chat_id = chat.id,
+                text = f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({note.telegraph_url})",
+                parse_mode=ParseMode.MARKDOWN_V2,
+                disable_web_page_preview=False,
+                reply_to_message_id=msg.message_id,
+                disable_notification=True
+            )
+            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Telegraph link sent successfully`"
             await status.edit_text(
                 status_md,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
-        update_network_status(success=True)  # Successfully sent message
+            status, status_md = await note.send_as_telegram_message(context.bot, chat.id, msg.message_id, status, status_md)
+            if telegraph_msg:
+                await telegraph_msg.delete()
+            if status and status_md is not None:
+                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Note sent successfully`"
+                await status.edit_text(
+                    status_md,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
+            update_network_status(success=True)  # Successfully sent message
+        except:
+            bot_logger.error(traceback.format_exc())
         if status:
             await status.delete()
     except Exception as e:
