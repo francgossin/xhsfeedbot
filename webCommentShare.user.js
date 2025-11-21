@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      2025-11-21
 // @description  Add a copy link button to comments
-// @author       You
+// @author       Franc Gossin
 // @match        https://www.xiaohongshu.com/discovery/item/*
 // @match        https://www.xiaohongshu.com/explore/*
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
