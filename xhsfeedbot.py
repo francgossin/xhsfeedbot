@@ -1086,6 +1086,18 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
             chat_id=chat_id,
             action=ChatAction.TYPING
         )
+        await context.bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=int(msg_identifier.split(".")[-1]),
+            reply_markup=None
+        )
+        ai_msg = await context.bot.send_message(
+            chat_id=chat_id,
+            reply_to_message_id=int(msg_identifier.split(".")[-1]),
+            text=f"*_{tg_msg_escape_markdown_v2('✨ AI Summary:\n')}_*```\n{tg_msg_escape_markdown_v2('Loading...')}```",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_notification=True
+        )
         
         # Read the stored message string if available
         note_content = ''
@@ -1097,14 +1109,20 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
                 note_content = msg_data.get('content', '')
                 media_data = msg_data.get('media', [])
                 f.close()
+            # Delete file after reading
+            os.remove(msg_file_path)
         if not note_content or not media_data:
             return
+        await ai_msg.edit_text(
+            text=f"*_{tg_msg_escape_markdown_v2('✨ AI Summary:\n')}_*```\n{tg_msg_escape_markdown_v2('Gathering note data...')}```",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
 
         content_length = max(66, min(200, len(note_content)//3))
         llm_query: str = f'以下是一篇小红书笔记的完整内容，请基于该内容，生成该笔记的简单信息摘要。以下是一些供参考的点：'\
-            '1. 笔记的主要内容和主题'\
-            '2. 笔记的评论亮点'\
-            '3. 笔记的多媒体内容描述（如图片、视频等）'\
+            '1. 笔记的主要内容、主题、立场观点、槽点、笑点亮点'\
+            '2. 笔记的评论的立场观点、槽点、笑点亮点'\
+            '3. （如果有必要）笔记的多媒体内容描述（如图片、视频等）'\
             '请将摘要内容组织成清晰的段落，确保信息完整且易于理解。语言组织应简洁明了，避免冗长和复杂的句子。'\
             f'禁止输出任何与笔记内容无关的信息。直接以纯文本格式输出内容，不要包含任何前言或结尾，不要添加额外的解释，不要使用 Markdown 等任何其他格式。输出内容必须为简体中文。（长度不得超过 {content_length}）'\
             f'笔记内容如下：\n{note_content}'
@@ -1113,6 +1131,10 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
         contents: list[types.Part] = [
             types.Part(text=llm_query)
         ]
+        await ai_msg.edit_text(
+            text=f"*_{tg_msg_escape_markdown_v2('✨ AI Summary:\n')}_*```\n{tg_msg_escape_markdown_v2('Downloading media...')}```",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
         # download media and convert to Gemini Part
         for media in media_data:
             if media.get('type', '') == 'image' and 'url' in media:
@@ -1133,6 +1155,10 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
                 contents.append(video_part)
 
         bot_logger.info(f"Generating summary with content length limit: {content_length}")
+        await ai_msg.edit_text(
+            text=f"*_{tg_msg_escape_markdown_v2('✨ AI Summary:\n')}_*```\n{tg_msg_escape_markdown_v2('Generating summary...')}```",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=types.Content(parts=contents),
@@ -1147,13 +1173,9 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
         if not response or not text:
             bot_logger.error("No response from Gemini API")
             return
-            
-        await context.bot.send_message(
-            chat_id=chat_id,
-            reply_to_message_id=int(msg_identifier.split(".")[-1]),
-            text=f"__{tg_msg_escape_markdown_v2('✨ AI Summary:\n')}__{tg_msg_escape_markdown_v2(text)}",
+        await ai_msg.edit_text(
+            text=f"*_{tg_msg_escape_markdown_v2('✨ AI Summary:\n')}_*```{tg_msg_escape_markdown_v2(text)}```",
             parse_mode=ParseMode.MARKDOWN_V2,
-            disable_notification=True
         )
     except Exception as e:
         bot_logger.error(f"Error in button callback: {e}\n{traceback.format_exc()}")
@@ -1416,9 +1438,9 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
                 chat_id = chat.id,
                 text = f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({note.telegraph_url})",
                 parse_mode=ParseMode.MARKDOWN_V2,
-                disable_web_page_preview=False,
+                disable_web_page_preview=True,
                 reply_to_message_id=msg.message_id,
-                disable_notification=True
+                disable_notification=True,
             )
             status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Telegraph link sent successfully`"
             await status.edit_text(
