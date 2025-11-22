@@ -11,13 +11,16 @@ import traceback
 import subprocess
 import paramiko
 import threading
+import base64
 from datetime import datetime, timedelta, timezone
 from pprint import pformat
 from dotenv import load_dotenv
-from urllib.parse import unquote, urljoin, parse_qs, urlparse
+from urllib.parse import unquote, urljoin, parse_qs, urlparse, quote
 from typing import Any
 from uuid import uuid4
 from io import BytesIO
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
 
 from telegram.ext import (
     filters,
@@ -145,7 +148,13 @@ def check_network_connectivity() -> bool:
         "https://www.google.com", 
         "https://1.1.1.1"
     ]
-    
+
+    # load log file as string
+    with open(logging_file, 'r', encoding='utf-8') as log_str:
+        log_content = log_str.read()
+        if "networkloop: Network Retry Loop (Polling Updates): Timed out: Pool timeout: All connections in the connection pool are occupied. Request was *not* sent to Telegram. Consider adjusting the connection pool size or the pool timeout.. Retrying immediately." in log_content:
+            return False
+
     for url in test_urls:
         try:
             response = requests.get(url, timeout=5)
@@ -165,6 +174,7 @@ def update_network_status(success: bool = True):
         current_time = time.time()
         if current_time - last_successful_request > network_timeout_threshold:
             is_network_healthy = False
+            bark_notify("xhsfeedbot network is unhealthy.")
 
 def network_monitor():
     """Background network monitoring function"""
@@ -1473,6 +1483,8 @@ def run_telegram_bot():
         .pool_timeout(10)\
         .concurrent_updates(True)\
         .build()
+
+    bark_notify("xhsfeedbot tries to start polling.")
     try:
         start_handler = CommandHandler("start", start)
         application.add_handler(start_handler)
@@ -1500,6 +1512,7 @@ def run_telegram_bot():
         
         bot_logger.info(f'Bot started polling with concurrent processing enabled (max {max_concurrent_requests} concurrent requests)')
         application.run_polling()
+
     except KeyboardInterrupt:
         shutdown_result = application.shutdown()
         bot_logger.debug(f'KeyboardInterrupt received, shutdown:{shutdown_result}')
@@ -1525,8 +1538,72 @@ def run_telegram_bot():
             bot_logger.error(f'Unexpected error:\n{traceback.format_exc()}\n\n SCRIPT WILL QUIT NOW')
         raise Exception(f'Error in main loop: {e}')
 
+def bark_notify(message: str) -> None:
+    bark_token = os.getenv('BARK_TOKEN')
+    bark_key = os.getenv('BARK_KEY')  # 32-character encryption key
+    bark_iv = os.getenv('BARK_IV', '472')  # IV, default to '472'
+    
+    if not bark_token:
+        bot_logger.warning('BARK_TOKEN not set, cannot send bark notification')
+        return
+    
+    try:
+        # If encryption key is provided, send encrypted notification
+        if bark_key:
+            # Create JSON payload
+            payload = json.dumps({
+                "body": message,
+                "sound": "birdsong",
+                "title": "xhsfeedbot"
+            }, ensure_ascii=False)
+            
+            # Ensure key is 32 bytes (256 bits for AES-256)
+            if len(bark_key) != 32:
+                bot_logger.error(f'BARK_KEY must be exactly 32 characters long, got {len(bark_key)}')
+                # Fall back to unencrypted
+                requests.get(
+                    f'https://api.day.app/{bark_token}/{quote("xhsfeedbot")}/{quote(message)}'
+                )
+                return
+            
+            # Convert key to bytes
+            key_bytes = bark_key.encode('utf-8')
+            
+            # Encrypt using AES-256-ECB with PKCS7 padding
+            # ECB mode doesn't use IV, so we ignore the bark_iv parameter for encryption
+            cipher = AES.new(key_bytes, AES.MODE_ECB)  # pyright: ignore[reportUnknownMemberType]
+            encrypted = cipher.encrypt(pad(payload.encode('utf-8'), AES.block_size))
+            
+            # Base64 encode the ciphertext
+            ciphertext = base64.b64encode(encrypted).decode('utf-8')
+            
+            # Send encrypted notification
+            response = requests.post(
+                f'https://api.day.app/{bark_token}',
+                data={
+                    'ciphertext': ciphertext,
+                    'iv': bark_iv
+                }
+            )
+            
+            if response.status_code == 200:
+                bot_logger.info('Encrypted Bark notification sent successfully')
+            else:
+                bot_logger.error(f'Failed to send encrypted bark notification: {response.status_code} {response.text}')
+        else:
+            # Send unencrypted notification (original behavior)
+            requests.get(
+                f'https://api.day.app/{bark_token}/{quote("xhsfeedbot")}/{quote(message)}'
+            )
+            bot_logger.info('Bark notification sent successfully')
+            
+    except Exception as e:
+        bot_logger.error(f'Failed to send bark notification: {e}\n{traceback.format_exc()}')
+
 def restart_script():
     bot_logger.info("Restarting script...")
+    # notify bot owner with bark
+    bark_notify("xhsfeedbot is restarting due to network issues.")
     try:
         process = psutil.Process(os.getpid())
         for handler in process.open_files() + process.net_connections():
