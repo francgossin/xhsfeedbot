@@ -928,7 +928,7 @@ def extract_anchor_comment_id(json_data: dict[str, Any]) -> list[dict[str, Any]]
     if not comments:
         bot_logger.error("No comments found in the data.")
         bot_logger.error(f"JSON data: {pformat(json_data)}")
-        raise Exception("No comments found in the data.")
+        return []
     comment = comments[0]
     sub_comments = comment.get('sub_comments', [])
     related_sub_comments: list[dict[str, Any]] = []
@@ -955,7 +955,7 @@ def extract_all_comments(json_data: dict[str, Any]) -> list[dict[str, Any]]:
     if not comments:
         bot_logger.error("No comments found in the data.")
         bot_logger.error(f"JSON data: {pformat(json_data)}")
-        raise Exception("No comments found in the data.")
+        return []
 
     data_parsed: list[dict[str, Any]] = []
 
@@ -1337,6 +1337,12 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     open_note(noteId, anchorCommentId=anchorCommentId)
+    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Loading note data`"
+    await status.edit_text(
+        status_md,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+    await asyncio.sleep(3)
 
     note_data: dict[str, Any] = {}
     comment_list_data: dict[str, Any] = {'data': {}}
@@ -1526,6 +1532,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
 
     bot_logger.debug('try open note on device')
     open_note(noteId, anchorCommentId=anchorCommentId)
+    await asyncio.sleep(3)
 
     note_data: dict[str, Any] = {}
     comment_list_data: dict[str, Any] = {'data': {}}
