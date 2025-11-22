@@ -4,10 +4,15 @@ from mitmproxy.tools.main import mitmdump # type: ignore
 from mitmproxy import http, ctx
 from urllib.parse import parse_qs, urlparse
 from typing import Any
+import os
+from dotenv import load_dotenv
+load_dotenv()
+FLASK_SERVER_NAME = '127.0.0.1'
+FLASK_SERVER_PORT = os.getenv('FLASK_SERVER_PORT', '5001')
 
 def set_request(note_id:str, url: str, data: dict[str, Any], type: str) -> dict[str, Any]:
     requests.post(
-        f"http://127.0.0.1:5001/set_{type}",
+        f"http://{FLASK_SERVER_NAME}:{FLASK_SERVER_PORT}/set_{type}",
         json={"note_id": note_id, "url": url, "data": data}
     )
     return {"note_id": note_id, "url": url, "data": data}
@@ -133,7 +138,7 @@ addons: list[Any] = [
 ]
 
 def run_mitm():
-    mitmdump(args=["-s", "xhsfeedbot.py"])
+    mitmdump(args=["-s", "xhsfeedbot.py", "--mode", "regular@8082", "--listen-host", "0.0.0.0"])
 
 
 if __name__ == "__main__":

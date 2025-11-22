@@ -1,6 +1,8 @@
 import sys
 import os
 import logging
+import paramiko
+import subprocess
 from dotenv import load_dotenv
 from typing import Any
 from flask import Flask, request, jsonify
@@ -16,6 +18,49 @@ handler = logging.StreamHandler(sys.stdout)
 handler.setLevel(logging.DEBUG)
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+
+if os.getenv('TARGET_DEVICE_TYPE') == '1':
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh_ip = os.getenv('SSH_IP')
+    if not ssh_ip:
+        raise ValueError("SSH_IP environment variable is required")
+    ssh_port = os.getenv('SSH_PORT')
+    if not ssh_port:
+        raise ValueError("SSH_PORT environment variable is required")
+    ssh.connect(
+        ssh_ip,
+        port=int(ssh_port),
+        username=os.getenv('SSH_USERNAME'),
+        password=os.getenv('SSH_PASSWORD')
+    )
+else:
+    ssh = None
+
+def home_page(connected_ssh_client: paramiko.SSHClient | None = None):
+    if os.getenv('TARGET_DEVICE_TYPE') == '0':
+        subprocess.run(["adb", "shell", "am", "start", "-d", "xhsdiscover://home"])
+    elif os.getenv('TARGET_DEVICE_TYPE') == '1':
+        if connected_ssh_client:
+            _, _, _ = connected_ssh_client.exec_command(
+                "uiopen xhsdiscover://home"
+            )
+        else:
+            subprocess.run(["uiopen", "xhsdiscover://home"])
+
+@app.route("/open_note/<noteId>", methods=["GET"])
+def open_note(noteId: str):
+    anchorCommentId = request.args.get('anchorCommentId', '')
+    if os.getenv('TARGET_DEVICE_TYPE') == '0':
+        subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')])
+    elif os.getenv('TARGET_DEVICE_TYPE') == '1':
+        if ssh:
+            _, _, _ = ssh.exec_command(
+                f"uiopen xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')
+            )
+        else:
+            subprocess.run(["uiopen", f"xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')])
+    return jsonify({"status": "success"})
 
 @app.route("/set_note", methods=["POST"])
 def set_note():

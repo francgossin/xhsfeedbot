@@ -9,7 +9,7 @@ import psutil
 import requests
 import traceback
 import subprocess
-import paramiko
+# import paramiko
 import threading
 import base64
 from datetime import datetime, timedelta, timezone
@@ -140,6 +140,8 @@ with open('redtoemoji.json', 'r', encoding='utf-8') as f:
 
 URL_REGEX = r"""(?i)\b((?:https?:(?:/{1,3}|[a-z0-9%])|[a-z0-9.\-]+[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)/)(?:[^\s()<>{}\[\]]+|\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\))+(?:\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\)|[^\s`!()\[\]{};:\'\".,<>?«»“”‘’])|(?:(?<!@)[a-z0-9]+(?:[.\-][a-z0-9]+)*[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)\b/?(?!@)))"""
 
+FLASK_SERVER_NAME = os.getenv('FLASK_SERVER_NAME', '127.0.0.1')
+
 def replace_redemoji_with_emoji(text: str) -> str:
     for red_emoji, emoji in redtoemoji.items():
         text = text.replace(red_emoji, emoji)
@@ -153,11 +155,30 @@ def check_network_connectivity() -> bool:
         "https://1.1.1.1"
     ]
 
-    # load log file as string
-    with open(logging_file, 'r', encoding='utf-8') as log_str:
-        log_content = log_str.read()
-        if "networkloop: Network Retry Loop (Polling Updates): Timed out: Pool timeout: All connections in the connection pool are occupied. Request was *not* sent to Telegram. Consider adjusting the connection pool size or the pool timeout.. Retrying immediately." in log_content:
-            return False
+    # Check for pool timeout errors in recent log content
+    try:
+        with open(logging_file, 'r', encoding='utf-8') as log_str:
+            # Only read the last 50KB of log to avoid memory issues
+            log_str.seek(0, 2)  # Go to end of file
+            file_size = log_str.tell()
+            read_size = min(file_size, 50000)  # Read last 50KB
+            log_str.seek(max(0, file_size - read_size))
+            log_content = log_str.read()
+            
+            # Check for pool timeout error pattern
+            pool_timeout_patterns = [
+                "Pool timeout: All connections in the connection pool are occupied",
+                "Request was *not* sent to Telegram",
+                "networkloop: Network Retry Loop (Polling Updates): Timed out"
+            ]
+            
+            # Count occurrences in recent log
+            pool_timeout_count = sum(1 for pattern in pool_timeout_patterns if pattern in log_content)
+            if pool_timeout_count >= 2:
+                bot_logger.warning(f"Detected {pool_timeout_count} pool timeout indicators in recent logs")
+                return False
+    except Exception as e:
+        bot_logger.error(f"Error reading log file: {e}")
 
     for url in test_urls:
         try:
@@ -381,15 +402,15 @@ class Note:
                     html += f'<h4>💬 <a href="https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={sub_comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""}">Comment</a></h4>'
                     if 'target_comment' in sub_comment:
                         html += f'<br><p>  ↪️  <a href="https://www.xiaohongshu.com/user/profile/{sub_comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> @{sub_comment["target_comment"]["user"]["nickname"]} ({sub_comment["target_comment"]["user"]["red_id"]})</a></p>'
-                    html += f'<br><br><p>{tg_msg_escape_html(replace_redemoji_with_emoji(sub_comment["content"]))}</p>'
+                    html += f'<br><p>{tg_msg_escape_html(replace_redemoji_with_emoji(sub_comment["content"]))}</p>'
                     for pic in sub_comment['pictures']:
                         if 'mp4' in pic:
                             html += f'<br><video src="{pic}"></video>'
                         else:
                             html += f'<br><img src="{pic}"></img>'
                     if sub_comment.get('audio_url', ''):
-                        html += f'<br><br><p><a href="{sub_comment["audio_url"]}">🎤 Voice</a></p>'
-                    html += f'<br><br><p>❤️ {comment["like_count"]} 💬 {sub_comment["sub_comment_count"]}<br>📍 {tg_msg_escape_html(sub_comment["ip_location"])}<br>{get_time_emoji(sub_comment["time"])} {convert_timestamp_to_timestr(sub_comment["time"])}</p>'
+                        html += f'<br><p><a href="{sub_comment["audio_url"]}">🎤 Voice</a></p>'
+                    html += f'<br><p>❤️ {sub_comment["like_count"]} 💬 {sub_comment["sub_comment_count"]}<br>📍 {tg_msg_escape_html(sub_comment["ip_location"])}<br>{get_time_emoji(sub_comment["time"])} {convert_timestamp_to_timestr(sub_comment["time"])}</p>'
                     html += f'<br><p>👤 <a href="https://www.xiaohongshu.com/user/profile/{sub_comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> @{sub_comment["user"]["nickname"]} ({sub_comment["user"]["red_id"]})</a></p>'
                     html += '</blockquote></blockquote>'
                 if i != len(self.comments) - 1:
@@ -792,27 +813,12 @@ def make_block_quotation(text: str) -> str:
         lines[0] = f'**{lines[0]}'
         lines[-1] = f'{lines[-1]}||'
     return '\n'.join(lines)
-def open_note(noteId: str, connected_ssh_client: paramiko.SSHClient | None = None, anchorCommentId: str | None = None):
-    if os.getenv('TARGET_DEVICE_TYPE') == '0':
-        subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')])
-    elif os.getenv('TARGET_DEVICE_TYPE') == '1':
-        if connected_ssh_client:
-            _, _, _ = connected_ssh_client.exec_command(
-                f"uiopen xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')
-            )
-        else:
-            subprocess.run(["uiopen", f"xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')])
 
-def home_page(connected_ssh_client: paramiko.SSHClient | None = None):
-    if os.getenv('TARGET_DEVICE_TYPE') == '0':
-        subprocess.run(["adb", "shell", "am", "start", "-d", "xhsdiscover://home"])
-    elif os.getenv('TARGET_DEVICE_TYPE') == '1':
-        if connected_ssh_client:
-            _, _, _ = connected_ssh_client.exec_command(
-                "uiopen xhsdiscover://home"
-            )
-        else:
-            subprocess.run(["uiopen", "xhsdiscover://home"])
+def open_note(noteId: str, anchorCommentId: str | None = None) -> dict[str, Any] | None:
+    try:
+        return requests.get(f'https://{FLASK_SERVER_NAME}/open_note/{noteId}' + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')).json()
+    except:
+        return None
 
 def get_url_info(message_text: str) -> dict[str, str | bool]:
     xsec_token = ''
@@ -1081,16 +1087,26 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
         if not chat_id:
             return
         
+        # Add delay to avoid flood control
+        await asyncio.sleep(1)
+        
         # Send a typing action
         await context.bot.send_chat_action(
             chat_id=chat_id,
             action=ChatAction.TYPING
         )
+        
+        # Add delay before editing message
+        await asyncio.sleep(0.5)
+        
         await context.bot.edit_message_reply_markup(
             chat_id=chat_id,
             message_id=int(msg_identifier.split(".")[-1]),
             reply_markup=None
         )
+        
+        # Add delay before sending new message
+        await asyncio.sleep(0.5)
         ai_msg = await context.bot.send_message(
             chat_id=chat_id,
             reply_to_message_id=int(msg_identifier.split(".")[-1]),
@@ -1162,11 +1178,6 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=types.Content(parts=contents),
-            # config=types.GenerateContentConfig(
-            #     max_output_tokens=content_length,
-            #     temperature=0.7,
-            #     top_p=0.95,
-            # )
         )
         text = response.text
         bot_logger.info(f"Generated summary for note {noteId}:\n{text}")
@@ -1318,41 +1329,21 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}, anchorCommentId: {anchorCommentId if anchorCommentId else "None"}')
-    if os.getenv('TARGET_DEVICE_TYPE') == '1':
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh_ip = os.getenv('SSH_IP')
-        if not ssh_ip:
-            raise ValueError("SSH_IP environment variable is required")
-        ssh_port = os.getenv('SSH_PORT')
-        if not ssh_port:
-            raise ValueError("SSH_PORT environment variable is required")
-        ssh.connect(
-            ssh_ip,
-            port=int(ssh_port),
-            username=os.getenv('SSH_USERNAME'),
-            password=os.getenv('SSH_PASSWORD')
-        )
-    else:
-        ssh = None
+
     bot_logger.debug('try open note on device')
     status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Parsing Note`"
     await status.edit_text(
         status_md,
         parse_mode=ParseMode.MARKDOWN_V2,
     )
-    open_note(noteId, ssh, anchorCommentId=anchorCommentId)
-    await asyncio.sleep(0.75)
-    home_page(ssh)
-    if ssh:
-        ssh.close()
+    open_note(noteId, anchorCommentId=anchorCommentId)
 
     note_data: dict[str, Any] = {}
     comment_list_data: dict[str, Any] = {'data': {}}
 
     try:
         note_data = requests.get(
-            f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_note/{noteId}"
+            f"https://{FLASK_SERVER_NAME}/get_note/{noteId}"
         ).json()
         with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
             json.dump(note_data, f, indent=4, ensure_ascii=False)
@@ -1367,7 +1358,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             times += 1
             try:
                 comment_list_data = requests.get(
-                    f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_comment_list/{noteId}"
+                    f"https://{FLASK_SERVER_NAME}/get_comment_list/{noteId}"
                 ).json()
                 with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
                     json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
@@ -1533,29 +1524,8 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     anchorCommentId = str(url_info['anchorCommentId'])
     bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}, anchorCommentId: {anchorCommentId if anchorCommentId else "None"}')
 
-    if os.getenv('TARGET_DEVICE_TYPE') == '1':
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh_ip = os.getenv('SSH_IP')
-        if not ssh_ip:
-            raise ValueError("SSH_IP environment variable is required")
-        ssh_port = os.getenv('SSH_PORT')
-        if not ssh_port:
-            raise ValueError("SSH_PORT environment variable is required")
-        ssh.connect(
-            ssh_ip,
-            port=int(ssh_port),
-            username=os.getenv('SSH_USERNAME'),
-            password=os.getenv('SSH_PASSWORD')
-        )
-    else:
-        ssh = None
     bot_logger.debug('try open note on device')
-    open_note(noteId, ssh, anchorCommentId=anchorCommentId)
-    await asyncio.sleep(0.6)
-    home_page(ssh)
-    if ssh:
-        ssh.close()
+    open_note(noteId, anchorCommentId=anchorCommentId)
 
     note_data: dict[str, Any] = {}
     comment_list_data: dict[str, Any] = {'data': {}}
@@ -1563,7 +1533,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     for _ in range(3):
         try:
             note_data = requests.get(
-                f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_note/{noteId}"
+                f"https://{FLASK_SERVER_NAME}/get_note/{noteId}"
             ).json()
             with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
                 json.dump(note_data, f, indent=4, ensure_ascii=False)
@@ -1630,9 +1600,16 @@ async def error_handler(update: Any, context: ContextTypes.DEFAULT_TYPE) -> None
     admin_id = os.getenv('ADMIN_ID')
     error_str = str(context.error).lower()
     
+    # Check for pool timeout - this is critical and should trigger immediate restart
+    if 'pool timeout' in error_str or 'all connections in the connection pool are occupied' in error_str:
+        bot_logger.error(f"CRITICAL: Pool timeout detected - triggering immediate restart:\n{context.error}")
+        bark_notify("xhsfeedbot: Pool timeout detected, restarting immediately")
+        restart_script()
+        return
+    
     # Check for network-related errors that should trigger restart
     network_keywords = [
-        'timeout', 'pool timeout', 'connection', 'network', 
+        'timeout', 'connection', 'network', 
         'timed out', 'connecttimeout', 'readtimeout', 'writetimeout'
     ]
     
@@ -1681,7 +1658,8 @@ def run_telegram_bot():
         .write_timeout(30)\
         .media_write_timeout(120)\
         .connect_timeout(15)\
-        .pool_timeout(10)\
+        .pool_timeout(20)\
+        .connection_pool_size(16)\
         .concurrent_updates(True)\
         .build()
 
