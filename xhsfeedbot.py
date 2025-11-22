@@ -21,14 +21,16 @@ from uuid import uuid4
 from io import BytesIO
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
-
+from google import genai
+from google.genai import types
 from telegram.ext import (
     filters,
     MessageHandler,
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
-    InlineQueryHandler
+    InlineQueryHandler,
+    CallbackQueryHandler
 )
 from telegram import (
     InputTextMessageContent,
@@ -39,7 +41,9 @@ from telegram import (
     InputMediaVideo,
     LinkPreviewOptions,
     InlineQueryResultArticle,
-    Message
+    Message,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
 )
 from telegram.error import (
     NetworkError,
@@ -242,6 +246,7 @@ class Note:
         if anchorCommentId:
             self.comments_with_context = extract_anchor_comment_id(comment_list_data['data'])
             bot_logger.debug(f"Comments with context extracted for anchorCommentId {anchorCommentId}:\n{pformat(self.comments_with_context)}")
+        self.comments = extract_all_comments(comment_list_data['data'])
         self.length: int = len(self.desc + self.title)
 
         self.tags: list[str] = [tag['name'] for tag in note_data['data'][0]['note_list'][0]['hash_tag']]
@@ -317,6 +322,21 @@ class Note:
             'video_url': getattr(self, 'video_url', ''),
             'url': self.url,
         }
+    
+    def media_for_llm(self) -> list[dict[str, str]]:
+        media_list: list[dict[str, str]] = []
+        for img in self.images_list:
+            if not img['live']:
+                media_list.append({
+                    'type': 'image',
+                    'url': img['url']
+                })
+        if self.video_url:
+            media_list.append({
+                'type': 'video',
+                'url': self.video_url
+            })
+        return media_list
 
     def to_html(self) -> str:
         html = ''
@@ -340,34 +360,77 @@ class Note:
         else:
             ipaddr_html = 'Unknown'
         html += f'<p>📍 {ipaddr_html}</p>'
-        if self.comments_with_context:
+        if self.comments:
             html += '<hr>'
-            for i, comment in enumerate(self.comments_with_context):
+            for i, comment in enumerate(self.comments):
                 html += f'<h4>💬 <a href="https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""}">Comment</a></h4>'
                 if 'target_comment' in comment:
                     html += f'<p>↪️ <a href="https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> @{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})</a></p>'
-                html += f'<blockquote>{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}</blockquote>'
+                html += f'<p>{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}</p>'
                 for pic in comment['pictures']:
                     if 'mp4' in pic:
                         html += f'<video src="{pic}"></video>'
                     else:
                         html += f'<img src="{pic}"></img>'
                 if comment.get('audio_url', ''):
-                    html += f'<blockquote><a href="{comment["audio_url"]}">🎤 Voice</a></blockquote>'
-                html += f'<p>❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]} 📍 {tg_msg_escape_html(comment["ip_location"])} {get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}</p>'
+                    html += f'<p><a href="{comment["audio_url"]}">🎤 Voice</a></p>'
+                html += f'<p>❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]}<br>📍 {tg_msg_escape_html(comment["ip_location"])}<br>{get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}</p>'
                 html += f'<p>👤 <a href="https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> @{comment["user"]["nickname"]} ({comment["user"]["red_id"]})</a></p>'
-                if i != len(self.comments_with_context) - 1:
+                for sub_comment in comment.get('sub_comments', []):
+                    html += '<blockquote><blockquote>'
+                    html += f'<h4>💬 <a href="https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={sub_comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""}">Comment</a></h4>'
+                    if 'target_comment' in sub_comment:
+                        html += f'<br><p>  ↪️  <a href="https://www.xiaohongshu.com/user/profile/{sub_comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> @{sub_comment["target_comment"]["user"]["nickname"]} ({sub_comment["target_comment"]["user"]["red_id"]})</a></p>'
+                    html += f'<br><br><p>{tg_msg_escape_html(replace_redemoji_with_emoji(sub_comment["content"]))}</p>'
+                    for pic in sub_comment['pictures']:
+                        if 'mp4' in pic:
+                            html += f'<br><video src="{pic}"></video>'
+                        else:
+                            html += f'<br><img src="{pic}"></img>'
+                    if sub_comment.get('audio_url', ''):
+                        html += f'<br><br><p><a href="{sub_comment["audio_url"]}">🎤 Voice</a></p>'
+                    html += f'<br><br><p>❤️ {comment["like_count"]} 💬 {sub_comment["sub_comment_count"]}<br>📍 {tg_msg_escape_html(sub_comment["ip_location"])}<br>{get_time_emoji(sub_comment["time"])} {convert_timestamp_to_timestr(sub_comment["time"])}</p>'
+                    html += f'<br><p>👤 <a href="https://www.xiaohongshu.com/user/profile/{sub_comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> @{sub_comment["user"]["nickname"]} ({sub_comment["user"]["red_id"]})</a></p>'
+                    html += '</blockquote></blockquote>'
+                if i != len(self.comments) - 1:
                     html += f'<hr>'
         self.html = html
         bot_logger.debug(f"HTML generated, \n\n{self.html}\n\n")
         return self.html
-    
-    def make_block_quotation(self, text: str) -> str:
-        lines = [f'>{tg_msg_escape_markdown_v2(line)}' for line in text.split('\n') if len(line) > 0 and bool(re.findall(r'\S+', line))]
-        if len(lines) > 3:
-            lines[0] = f'**{lines[0]}'
-            lines[-1] = f'{lines[-1]}||'
-        return '\n'.join(lines)
+
+    def __str__(self) -> str:
+        self.content = '笔记标题：' + self.title + '\n' + '笔记正文：' + self.desc
+        for img in self.images_list:
+            if not img['live']:
+                img = requests.get(img["url"]).content # TODO image to base64?
+        self.content += f'\n发布者：@{self.user["name"]} ({self.user["red_id"]})\n'
+        self.content += f'{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time)}\n'
+        self.content += f'点赞：{self.liked_count}收藏：{self.collected_count}评论：{self.comments_count}分享：{self.shared_count}\n'
+        if hasattr(self, 'ip_location'):
+            ipaddr_html = tg_msg_escape_html(self.ip_location) + '\n'
+        else:
+            ipaddr_html = 'Unknown\n'
+        self.content += f'IP 地址：{ipaddr_html}\n\n评论区：\n\n'
+        if self.comments:
+            self.content += '\n'
+            for i, comment in enumerate(self.comments):
+                self.content += f'💬 评论\n'
+                # if 'target_comment' in comment:
+                #     self.content += f'↪️ @{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})\n'
+                self.content += f'{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}\n'
+                self.content += f'点赞：{comment["like_count"]}\nIP 地址：{tg_msg_escape_html(comment["ip_location"])}\n{get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}\n'
+                # self.content += f'发布者：@{comment["user"]["nickname"]} ({comment["user"]["red_id"]})\n'
+                for sub_comment in comment.get('sub_comments', []):
+                    self.content += f'💬 回复\n'
+                    # if 'target_comment' in sub_comment:
+                        # self.content += f'↪️ @{sub_comment["target_comment"]["user"]["nickname"]} ({sub_comment["target_comment"]["user"]["red_id"]})\n'
+                    self.content += f'{tg_msg_escape_html(replace_redemoji_with_emoji(sub_comment["content"]))}\n'
+                    self.content += f'点赞：{sub_comment["like_count"]}\nIP 地址：{tg_msg_escape_html(sub_comment["ip_location"])}\n{get_time_emoji(sub_comment["time"])} {convert_timestamp_to_timestr(sub_comment["time"])}\n'
+                    # self.content += f'发布者：@{sub_comment["user"]["nickname"]} ({sub_comment["user"]["red_id"]})\n'
+                if i != len(self.comments) - 1:
+                    self.content += f'\n'
+        bot_logger.debug(f"String generated, \n\n{self.content}\n\n")
+        return self.content
 
     async def to_telegraph(self) -> str:
         if not hasattr(self, 'html'):
@@ -391,13 +454,13 @@ class Note:
         message = ''
         message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*'
         if preview:
-            message += f'\n{self.make_block_quotation(self.desc[:555] + '...')}\n'
+            message += f'\n{make_block_quotation(self.desc[:555] + '...')}\n'
             if hasattr(self, 'telegraph_url'):
                 message += f'\n📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n'
             else:
                 message += f'\n📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n'
         else:
-            message += f'\n{self.make_block_quotation(self.desc)}\n' if self.desc else '\n'
+            message += f'\n{make_block_quotation(self.desc)}\n' if self.desc else '\n'
             if hasattr(self, 'telegraph_url'):
                 message += f'\n📝 [Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n'
             elif self.telegraph:
@@ -484,105 +547,83 @@ class Note:
                         chat_id=chat_id,
                         action=ChatAction.UPLOAD_PHOTO,
                     )
-            if i != len(self.medien_parts) - 1:
-                try:
-                    sent_message = await bot.send_media_group(
-                        chat_id=chat_id,
-                        reply_to_message_id=reply_to_message_id,
-                        media=part,
-                        disable_notification=True
-                    )
-                except:
-                    bot_logger.error(f"Failed to send media group:\n{traceback.format_exc()}")
-                    if status and status_md is not None:
-                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying with downloaded media`"
-                        await status.edit_text(
-                            status_md,
-                            parse_mode=ParseMode.MARKDOWN_V2,
-                        )
-                    media: list[InputMediaPhoto | InputMediaVideo] = []
-                    for _, p in enumerate(part):
-                        if type(p.media) == str and '.mp4' not in p.media:
-                            media_content = requests.get(p.media).content
-                            if status and status_md is not None:
-                                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Downloaded media {_ + 1} of {len(part)}`"
-                                await status.edit_text(
-                                    status_md,
-                                    parse_mode=ParseMode.MARKDOWN_V2,
-                                )
-                            media.append(InputMediaPhoto(media_content))
-                        elif self.video_url and type(p.media) != str:
-                            media.append(p)
-                    if status and status_md is not None:
-                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying upload of media group part {i + 1} of {len(self.medien_parts)}`"
-                        await status.edit_text(
-                            status_md,
-                            parse_mode=ParseMode.MARKDOWN_V2,
-                        )
-                    sent_message = await bot.send_media_group(
-                        chat_id=chat_id,
-                        reply_to_message_id=reply_to_message_id,
-                        media=media,
-                    )
-            else:
-                try:
-                    sent_message = await bot.send_media_group(
-                        chat_id=chat_id,
-                        reply_to_message_id=reply_to_message_id,
-                        media=part,
-                        caption=self.message if hasattr(
-                            self,
-                            'message'
-                        ) else await self.to_telegram_message(
-                            preview=bool(self.length >= 666)
-                        ),
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        disable_notification=True
-                    )
-                except:
-                    bot_logger.error(f"Failed to send media group:\n{pformat(part)}\n{traceback.format_exc()}")
-                    if status and status_md is not None:
-                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying with downloaded media`"
-                        await status.edit_text(
-                            status_md,
-                            parse_mode=ParseMode.MARKDOWN_V2,
-                        )
-                    media: list[InputMediaPhoto | InputMediaVideo] = []
-                    for _, p in enumerate(part):
-                        if type(p.media) == str and '.mp4' not in p.media:
-                            media_content = requests.get(p.media).content
-                            if status and status_md is not None:
-                                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Downloaded media {_ + 1} of {len(part)}`"
-                                await status.edit_text(
-                                    status_md,
-                                    parse_mode=ParseMode.MARKDOWN_V2,
-                                )
-                            media.append(InputMediaPhoto(media_content))
-                        elif self.video_url and type(p.media) != str:
-                            media.append(p)
-                    bot_logger.debug(f"Retrying with downloaded media:\n{pformat(media)}")
-                    if status and status_md is not None:
-                        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying upload of media group part {i + 1} of {len(self.medien_parts)}`"
-                        await status.edit_text(
-                            status_md,
-                            parse_mode=ParseMode.MARKDOWN_V2,
-                        )
-                    sent_message = await bot.send_media_group(
-                        chat_id=chat_id,
-                        reply_to_message_id=reply_to_message_id,
-                        media=media,
-                        caption=self.message if hasattr(
-                            self,
-                            'message'
-                        ) else await self.to_telegram_message(
-                            preview=bool(self.length >= 666)
-                        ),
+            try:
+                sent_message = await bot.send_media_group(
+                    chat_id=chat_id,
+                    reply_to_message_id=reply_to_message_id,
+                    media=part,
+                    disable_notification=True
+                )
+            except:
+                bot_logger.error(f"Failed to send media group:\n{traceback.format_exc()}")
+                if status and status_md is not None:
+                    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying with downloaded media`"
+                    await status.edit_text(
+                        status_md,
                         parse_mode=ParseMode.MARKDOWN_V2,
                     )
+                media: list[InputMediaPhoto | InputMediaVideo] = []
+                for _, p in enumerate(part):
+                    if type(p.media) == str and '.mp4' not in p.media:
+                        media_content = requests.get(p.media).content
+                        if status and status_md is not None:
+                            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Downloaded media {_ + 1} of {len(part)}`"
+                            await status.edit_text(
+                                status_md,
+                                parse_mode=ParseMode.MARKDOWN_V2,
+                            )
+                        media.append(InputMediaPhoto(media_content))
+                    elif self.video_url and type(p.media) != str:
+                        media.append(p)
+                if status and status_md is not None:
+                    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Retrying upload of media group part {i + 1} of {len(self.medien_parts)}`"
+                    await status.edit_text(
+                        status_md,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                    )
+                sent_message = await bot.send_media_group(
+                    chat_id=chat_id,
+                    reply_to_message_id=reply_to_message_id,
+                    media=media,
+                )
+        await bot.send_chat_action(
+            chat_id=chat_id,
+            action=ChatAction.TYPING
+        )
+        if status and status_md is not None:
+            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Sending main message`"
+            await status.edit_text(
+                status_md,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        sent_message = await bot.send_message(
+            chat_id=chat_id,
+            reply_to_message_id=sent_message[0].message_id if sent_message else reply_to_message_id,
+            text='Loading ...',
+            disable_notification=True,
+        )
+        reply_id = sent_message.message_id
+        await sent_message.edit_text(
+            text=self.message if hasattr(
+                self,
+                'message'
+            ) else await self.to_telegram_message(
+                preview=bool(self.length >= 666)
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✨ AI Summary", callback_data=f"summary:{self.noteId}.{reply_id}")]]),
+            disable_web_page_preview=True,
+        )
         if not sent_message:
             bot_logger.error("No message was sent!")
             return status, status_md
-        reply_id: int = sent_message[0].message_id
+        llm_data: dict[str, list[dict[str, str]] | str] = {
+            'content': self.__str__(),
+            'media': self.media_for_llm(),
+        }
+        with open(os.path.join('data', f'{self.noteId}.{reply_id}.json'), 'w', encoding='utf-8') as f:
+            json.dump(llm_data, f, ensure_ascii=False, indent=2)
+            f.close()
         comment_id_to_message_id: dict[str, Any] = {}
         if self.comments_with_context:
             if status and status_md is not None:
@@ -604,7 +645,7 @@ class Note:
                     comment_text += f'\n↪️ [@{tg_msg_escape_markdown_v2(comment["target_comment"]["user"]["nickname"])} \\({tg_msg_escape_markdown_v2(comment["target_comment"]["user"]["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""})\n'
                 else:
                     comment_text += '\n'
-                comment_text += f'{self.make_block_quotation(replace_redemoji_with_emoji(comment["content"]))}\n'
+                comment_text += f'{make_block_quotation(replace_redemoji_with_emoji(comment["content"]))}\n'
                 comment_text += f'❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]} 📍 {tg_msg_escape_markdown_v2(comment["ip_location"])} {get_time_emoji(comment["time"])} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(comment["time"]))}\n'
                 comment_text += f'👤 [@{tg_msg_escape_markdown_v2(comment["user"]["nickname"])} \\({tg_msg_escape_markdown_v2(comment["user"]["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""})'
                 bot_logger.debug(f"Sending comment:\n{comment_text}")
@@ -745,6 +786,12 @@ def tg_msg_escape_markdown_v2(t: str | int) -> str:
         t = t.replace(i, "\\" + i)
     return t
 
+def make_block_quotation(text: str) -> str:
+    lines = [f'>{tg_msg_escape_markdown_v2(line)}' for line in text.split('\n') if len(line) > 0 and bool(re.findall(r'\S+', line))]
+    if len(lines) > 3:
+        lines[0] = f'**{lines[0]}'
+        lines[-1] = f'{lines[-1]}||'
+    return '\n'.join(lines)
 def open_note(noteId: str, connected_ssh_client: paramiko.SSHClient | None = None, anchorCommentId: str | None = None):
     if os.getenv('TARGET_DEVICE_TYPE') == '0':
         subprocess.run(["adb", "shell", "am", "start", "-d", f"xhsdiscover://item/{noteId}" + (f"?anchorCommentId={anchorCommentId}" if anchorCommentId else '')])
@@ -897,6 +944,25 @@ def extract_anchor_comment_id(json_data: dict[str, Any]) -> list[dict[str, Any]]
         data_parsed.append(parsed_comment)
     return data_parsed
 
+def extract_all_comments(json_data: dict[str, Any]) -> list[dict[str, Any]]:
+    comments = json_data.get('comments', [])
+    if not comments:
+        bot_logger.error("No comments found in the data.")
+        bot_logger.error(f"JSON data: {pformat(json_data)}")
+        raise Exception("No comments found in the data.")
+
+    data_parsed: list[dict[str, Any]] = []
+
+    for comment in comments:
+        parsed_comment = parse_comment(comment)
+        sub_comments: list[dict[str, Any]] = []
+        for sub_comment in comment.get('sub_comments', []):
+            parsed_sub_comment = parse_comment(sub_comment)
+            sub_comments.append(parsed_sub_comment)
+        parsed_comment["sub_comments"] = sub_comments
+        data_parsed.append(parsed_comment)
+    return data_parsed
+
 def convert_to_ogg_opus_pipe(input_bytes: bytes) -> bytes:
     process = subprocess.Popen(
         [
@@ -984,6 +1050,120 @@ Group privacy is on\\. You need to send command to bot manually or add bot as ad
         except Exception as e:
             bot_logger.error(f"Failed to send help message: {e}")
             update_network_status(success=False)
+
+async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle button callbacks for generating more info"""
+    query = update.callback_query
+    if not query:
+        return
+    
+    user_id = update.effective_user.id if update.effective_user else None
+    
+    # Check whitelist
+    if not is_user_whitelisted(user_id):
+        bot_logger.warning(f"Unauthorized callback attempt from user {user_id}")
+        await query.answer("Sorry, you are not authorized to use this feature.", show_alert=True)
+        return
+    
+    await query.answer()
+    
+    # Parse callback data: "more_info:{noteId}:{message_id}"
+    callback_data = query.data
+    if not callback_data or not callback_data.startswith("summary:"):
+        return
+    
+    try:
+        noteId, msg_identifier = callback_data.split(":")
+        bot_logger.info(f"Button clicked: message {msg_identifier} for note {noteId}")
+        
+        chat_id = query.message.chat.id if query.message else None
+        bot_logger.debug(f"Chat ID: {chat_id}")
+        if not chat_id:
+            return
+        
+        # Send a typing action
+        await context.bot.send_chat_action(
+            chat_id=chat_id,
+            action=ChatAction.TYPING
+        )
+        
+        # Read the stored message string if available
+        note_content = ''
+        media_data: list[dict[str, str]] = []
+        msg_file_path = os.path.join('data', f'{msg_identifier}.json')
+        if os.path.exists(msg_file_path):
+            with open(msg_file_path, 'r', encoding='utf-8') as f:
+                msg_data = json.load(f)
+                note_content = msg_data.get('content', '')
+                media_data = msg_data.get('media', [])
+                f.close()
+        if not note_content or not media_data:
+            return
+
+        content_length = max(66, min(200, len(note_content)//3))
+        llm_query: str = f'以下是一篇小红书笔记的完整内容，请基于该内容，生成该笔记的简单信息摘要。以下是一些供参考的点：'\
+            '1. 笔记的主要内容和主题'\
+            '2. 笔记的评论亮点'\
+            '3. 笔记的多媒体内容描述（如图片、视频等）'\
+            '请将摘要内容组织成清晰的段落，确保信息完整且易于理解。语言组织应简洁明了，避免冗长和复杂的句子。'\
+            f'禁止输出任何与笔记内容无关的信息。直接以纯文本格式输出内容，不要包含任何前言或结尾，不要添加额外的解释，不要使用 Markdown 等任何其他格式。输出内容必须为简体中文。（长度不得超过 {content_length}）'\
+            f'笔记内容如下：\n{note_content}'
+        bot_logger.debug(f"LLM Query:\n{llm_query}")
+
+        contents: list[types.Part] = [
+            types.Part(text=llm_query)
+        ]
+        # download media and convert to Gemini Part
+        for media in media_data:
+            if media.get('type', '') == 'image' and 'url' in media:
+                media_url = media['url']
+                media_bytes = requests.get(media_url).content
+                image_part = types.Part.from_bytes(
+                    data=media_bytes,
+                    mime_type="image/jpeg"
+                )
+                contents.append(image_part)
+            elif media.get('type', '') == 'video' and 'url' in media:
+                media_url = media['url']
+                media_bytes = requests.get(media_url).content
+                video_part = types.Part.from_bytes(
+                    data=media_bytes,
+                    mime_type="video/mp4"
+                )
+                contents.append(video_part)
+
+        bot_logger.info(f"Generating summary with content length limit: {content_length}")
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=types.Content(parts=contents),
+            # config=types.GenerateContentConfig(
+            #     max_output_tokens=content_length,
+            #     temperature=0.7,
+            #     top_p=0.95,
+            # )
+        )
+        text = response.text
+        bot_logger.info(f"Generated summary for note {noteId}:\n{text}")
+        if not response or not text:
+            bot_logger.error("No response from Gemini API")
+            return
+            
+        await context.bot.send_message(
+            chat_id=chat_id,
+            reply_to_message_id=int(msg_identifier.split(".")[-1]),
+            text=f"__{tg_msg_escape_markdown_v2('✨ AI Summary:\n')}__{tg_msg_escape_markdown_v2(text)}",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_notification=True
+        )
+    except Exception as e:
+        bot_logger.error(f"Error in button callback: {e}\n{traceback.format_exc()}")
+        if query.message:
+            await context.bot.send_message(
+                chat_id=query.message.chat.id,
+                text=f"An error occurred while processing your request:\n```python\n{tg_msg_escape_markdown_v2(str(e))}\n```",
+                parse_mode=ParseMode.MARKDOWN_V2,
+                disable_notification=True
+            )
 
 async def process_note_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Process a single note request with concurrency control"""
@@ -1161,28 +1341,27 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         times = 0
-        if anchorCommentId:
-            while True:
-                times += 1
-                try:
-                    comment_list_data = requests.get(
-                        f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_comment_list/{noteId}"
-                    ).json()
-                    with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
-                        json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
-                        f.close()
-                    bot_logger.debug('got comment list data')
-                    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Fetch comment list data successfully`"
-                    await status.edit_text(
-                        status_md,
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                    )
-                    break
-                except:
-                    if times <= 3:
-                        await asyncio.sleep(0.1)
-                    else:
-                        raise Exception('error when getting comment list data')
+        while True:
+            times += 1
+            try:
+                comment_list_data = requests.get(
+                    f"http://127.0.0.1:{os.getenv('SHARED_SERVER_PORT')}/get_comment_list/{noteId}"
+                ).json()
+                with open(os.path.join("data", f"comment_list_data-{noteId}.json"), "w", encoding='utf-8') as f:
+                    json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
+                    f.close()
+                bot_logger.debug('got comment list data')
+                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Fetch comment list data successfully`"
+                await status.edit_text(
+                    status_md,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
+                break
+            except:
+                if times <= 3:
+                    await asyncio.sleep(0.1)
+                else:
+                    raise Exception('error when getting comment list data')
     except:
         bot_logger.error(traceback.format_exc())
     finally:
@@ -1490,6 +1669,10 @@ def run_telegram_bot():
         application.add_handler(start_handler)
         help_handler = CommandHandler("help", help)
         application.add_handler(help_handler)
+        
+        # Add callback query handler for button clicks
+        AI_summary_button_callback_handler = CallbackQueryHandler(AI_summary_button_callback)
+        application.add_handler(AI_summary_button_callback_handler)
 
         application.add_error_handler(error_handler)
 
@@ -1616,6 +1799,7 @@ def restart_script():
 if __name__ == "__main__":
     try:
         telegraph_account = Telegraph()
+        client = genai.Client()
         run_telegram_bot()
     except Exception as e:
         restart_script()
