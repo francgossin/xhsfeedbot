@@ -435,19 +435,21 @@ class Note:
         if self.comments:
             self.content += '\n'
             for i, comment in enumerate(self.comments):
-                self.content += f'💬 评论\n'
-                # if 'target_comment' in comment:
-                #     self.content += f'↪️ @{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})\n'
-                self.content += f'{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}\n'
-                self.content += f'点赞：{comment["like_count"]}\nIP 地址：{tg_msg_escape_html(comment["ip_location"])}\n{get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}\n'
-                # self.content += f'发布者：@{comment["user"]["nickname"]} ({comment["user"]["red_id"]})\n'
+                if comment["content"]:
+                    self.content += f'💬 评论\n'
+                    # if 'target_comment' in comment:
+                    #     self.content += f'↪️ @{comment["target_comment"]["user"]["nickname"]} ({comment["target_comment"]["user"]["red_id"]})\n'
+                    self.content += f'{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}\n'
+                    self.content += f'点赞：{comment["like_count"]}\nIP 地址：{tg_msg_escape_html(comment["ip_location"])}\n{get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}\n'
+                    # self.content += f'发布者：@{comment["user"]["nickname"]} ({comment["user"]["red_id"]})\n'
                 for sub_comment in comment.get('sub_comments', []):
-                    self.content += f'💬 回复\n'
-                    # if 'target_comment' in sub_comment:
-                        # self.content += f'↪️ @{sub_comment["target_comment"]["user"]["nickname"]} ({sub_comment["target_comment"]["user"]["red_id"]})\n'
-                    self.content += f'{tg_msg_escape_html(replace_redemoji_with_emoji(sub_comment["content"]))}\n'
-                    self.content += f'点赞：{sub_comment["like_count"]}\nIP 地址：{tg_msg_escape_html(sub_comment["ip_location"])}\n{get_time_emoji(sub_comment["time"])} {convert_timestamp_to_timestr(sub_comment["time"])}\n'
-                    # self.content += f'发布者：@{sub_comment["user"]["nickname"]} ({sub_comment["user"]["red_id"]})\n'
+                    if sub_comment["content"]:
+                        self.content += f'💬 回复\n'
+                        # if 'target_comment' in sub_comment:
+                            # self.content += f'↪️ @{sub_comment["target_comment"]["user"]["nickname"]} ({sub_comment["target_comment"]["user"]["red_id"]})\n'
+                        self.content += f'{tg_msg_escape_html(replace_redemoji_with_emoji(sub_comment["content"]))}\n'
+                        self.content += f'点赞：{sub_comment["like_count"]}\nIP 地址：{tg_msg_escape_html(sub_comment["ip_location"])}\n{get_time_emoji(sub_comment["time"])} {convert_timestamp_to_timestr(sub_comment["time"])}\n'
+                        # self.content += f'发布者：@{sub_comment["user"]["nickname"]} ({sub_comment["user"]["red_id"]})\n'
                 if i != len(self.comments) - 1:
                     self.content += f'\n'
         bot_logger.debug(f"String generated, \n\n{self.content}\n\n")
@@ -1134,14 +1136,38 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
-        content_length = max(66, min(200, len(note_content)//3))
-        llm_query: str = f'以下是一篇小红书笔记的完整内容，请基于该内容，生成该笔记的简单信息摘要。以下是一些供参考的点：'\
-            '1. 笔记的主要内容、主题、立场观点、槽点、笑点亮点'\
-            '2. 笔记的评论的立场观点、槽点、笑点亮点'\
-            '3. （如果有必要）笔记的多媒体内容描述（如图片、视频等）'\
-            '请将摘要内容组织成清晰的段落，确保信息完整且易于理解。语言组织应简洁明了，避免冗长和复杂的句子。'\
-            f'禁止输出任何与笔记内容无关的信息。直接以纯文本格式输出内容，不要包含任何前言或结尾，不要添加额外的解释，不要使用 Markdown 等任何其他格式。输出内容必须为简体中文。（长度不得超过 {content_length}）'\
-            f'笔记内容如下：\n{note_content}'
+        content_length = max(100, min(200, len(note_content)//2))
+        llm_query: str = f'''以下是一篇小红书笔记的完整内容。请先判断笔记本体的性质，再据此确定总结的语气与取向。
+
+【语气判断规则】
+1. 若笔记或评论呈现明显槽点、反差、搞笑情节、离谱行为、过度矫情、自我矛盾或“废物行为”（包括但不限于巨婴操作、反智自信、嘴硬硬撑、生活不自理等），可适度使用克制的幽默与轻度吐槽，但仅针对行为本身。
+2. 若槽点主体属于弱势群体（如老人、残障人士、认知障碍者等），即使行为可吐槽，也仅作客观、温和的事实描述。
+3. 若内容正常、信息性强、无槽点，则保持中立、简洁的分析风格。
+
+【多媒体处理原则】
+1. 若图片或视频对理解核心内容或槽点至关重要，则进行必要的简要概述。
+2. 若多媒体未提供新增信息，则直接忽略，不输出任何相关说明。
+
+【总结要求（需按顺序执行）】
+1. 完整概括笔记本体内容
+   - 必须体现主要内容、核心观点或意图。
+   - 如有槽点或亮点，可酌情补充。
+   - 若标签无实际信息或亮点，则不予概括。
+
+2. 单独概括评论区内容（如存在）
+   - 包括态度、补充信息、槽点或吐槽点。
+   - 不能以评论区代替笔记本体总结。
+
+3. 多媒体仅在必要时简要说明，不得机械复述画面。
+
+4. 语言自然、流畅。  
+5. 禁止输出无关内容。  
+6. 直接输出正文，无标题、无前后缀、无 Markdown。  
+7. 使用简体中文。
+8. 字数尽量不超过 {content_length}，若超出则在确保内容完整前提下尽量接近该限制。
+
+笔记内容如下：
+{note_content}'''
         bot_logger.debug(f"LLM Query:\n{llm_query}")
 
         contents: list[types.Part] = [
@@ -1185,7 +1211,7 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
             bot_logger.error("No response from Gemini API")
             return
         await ai_msg.edit_text(
-            text=f"*_{tg_msg_escape_markdown_v2('✨ AI Summary:\n')}_*```{tg_msg_escape_markdown_v2(text)}```",
+            text=f"*_{tg_msg_escape_markdown_v2('✨ AI Summary:\n')}_*```Note\n{tg_msg_escape_markdown_v2(text)}```",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
     except Exception as e:
