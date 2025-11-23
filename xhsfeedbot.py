@@ -52,7 +52,7 @@ from telegram.error import (
 from telegram.constants import (
     ParseMode,
     ChatAction,
-    # ChatMemberStatus,
+    ChatMemberStatus,
 )
 from telegraph.aio import Telegraph # type: ignore
 from PIL import Image
@@ -133,6 +133,16 @@ async def is_user_whitelisted(user_id: int | None, bot: Bot | None = None) -> bo
         return True
     if user_id in whitelisted_users:
         return True
+    # Optionally check if user is a member of a private channel
+    if bot is not None:
+        private_channel_id = int(os.getenv('CHANNEL_ID', '0'))
+        if private_channel_id:
+            try:
+                member = await bot.get_chat_member(private_channel_id, user_id)
+                if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+                    return True
+            except BadRequest as e:
+                bot_logger.error(f"Error checking membership for user {user_id} in channel {private_channel_id}: {e}")
     return False
 
 # Load whitelist at startup
@@ -249,7 +259,7 @@ class Note:
         }
         # self.text_language_code = note_data['data'][0]['note_list'][0]['text_language_code']
 
-        self.title: str = note_data['data'][0]['note_list'][0]['title'] if note_data['data'][0]['note_list'][0]['title'] else f"Untitled Note"
+        self.title: str = note_data['data'][0]['note_list'][0]['title'] if note_data['data'][0]['note_list'][0]['title'] else f""
         self.type: str = note_data['data'][0]['note_list'][0]['type']
 
         self.raw_desc = replace_redemoji_with_emoji(note_data['data'][0]['note_list'][0]['desc'])
@@ -261,7 +271,7 @@ class Note:
         )
         self.time = note_data['data'][0]['note_list'][0]['time']
         self.ip_location = note_data['data'][0]['note_list'][0]['ip_location']\
-            if 'ip_location' in note_data['data'][0]['note_list'][0] else 'Unknown'
+            if 'ip_location' in note_data['data'][0]['note_list'][0] else '?'
         self.collected_count = note_data['data'][0]['note_list'][0]['collected_count']
         self.comments_count = note_data['data'][0]['note_list'][0]['comments_count']
         self.shared_count = note_data['data'][0]['note_list'][0]['shared_count']
@@ -365,7 +375,7 @@ class Note:
 
     def to_html(self) -> str:
         html = ''
-        html += f'<h3>『<a href="{self.url}">{self.title}</a>』</h3>'
+        html += f'<h3><a href="{self.url}">{self.title}</a></h3>' if self.title else ''
         for img in self.images_list:
             if not img['live']:
                 html += f'<img src="{img["url"]}"></img>'
@@ -383,8 +393,9 @@ class Note:
         if hasattr(self, 'ip_location'):
             ipaddr_html = tg_msg_escape_html(self.ip_location)
         else:
-            ipaddr_html = 'Unknown'
+            ipaddr_html = '?'
         html += f'<p>📍 {ipaddr_html}</p>'
+        html += f'<blockquote><a href="{self.url}">Source</a></blockquote>'
         if self.comments:
             html += '<hr>'
             for i, comment in enumerate(self.comments):
@@ -434,7 +445,7 @@ class Note:
         if hasattr(self, 'ip_location'):
             ipaddr_html = tg_msg_escape_html(self.ip_location) + '\n'
         else:
-            ipaddr_html = 'Unknown\n'
+            ipaddr_html = '?\n'
         self.content += f'IP 地址：{ipaddr_html}\n\n评论区：\n\n'
         if self.comments:
             self.content += '\n'
@@ -478,16 +489,15 @@ class Note:
         return self.telegraph_url
 
     async def to_telegram_message(self, preview: bool = False) -> str:
-        message = ''
-        message += f'*『[{tg_msg_escape_markdown_v2(self.title)}]({self.url})』*'
+        message = f'*[{tg_msg_escape_markdown_v2(self.title)}]({self.url})*\n' if self.title else ''
         if preview:
-            message += f'\n{make_block_quotation(self.desc[:555] + '...')}\n'
+            message += f'{make_block_quotation(self.desc[:555] + '...')}\n' if self.desc else ''
             if hasattr(self, 'telegraph_url'):
                 message += f'\n📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n'
             else:
                 message += f'\n📝 [View more via Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n'
         else:
-            message += f'\n{make_block_quotation(self.desc)}\n' if self.desc else '\n'
+            message += f'{make_block_quotation(self.desc)}\n' if self.desc else ''
             if hasattr(self, 'telegraph_url'):
                 message += f'\n📝 [Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n'
             elif self.telegraph:
@@ -514,8 +524,8 @@ class Note:
         if hasattr(self, 'ip_location'):
             ip_html = tg_msg_escape_markdown_v2(self.ip_location)
         else:
-            ip_html = 'Unknown'
-        message += f'>📍 {ip_html}'
+            ip_html = '?'
+        message += f'>📍 {ip_html}\n\n📕 [Note Source]({self.url})'
         self.message = message
         bot_logger.debug(f"Telegram message generated, \n\n{self.message}\n\n")
         return message
@@ -535,9 +545,7 @@ class Note:
             #     )
         if self.video_url:
             video_data = requests.get(self.video_url).content
-            self.medien.append(
-                InputMediaVideo(video_data)
-            )
+            self.medien = [InputMediaVideo(video_data)]
         self.medien_parts = [self.medien[i:i + 10] for i in range(0, len(self.medien), 10)]
         return self.medien_parts
 
@@ -575,12 +583,20 @@ class Note:
                         action=ChatAction.UPLOAD_PHOTO,
                     )
             try:
-                sent_message = await bot.send_media_group(
-                    chat_id=chat_id,
-                    reply_to_message_id=reply_to_message_id,
-                    media=part,
-                    disable_notification=True
-                )
+                if self.video_url:
+                    sent_message = await bot.send_media_group(
+                        chat_id=chat_id,
+                        reply_to_message_id=reply_to_message_id,
+                        media=self.medien[-1:],  # Send only the video as a single media
+                        disable_notification=True
+                    )
+                else:
+                    sent_message = await bot.send_media_group(
+                        chat_id=chat_id,
+                        reply_to_message_id=reply_to_message_id,
+                        media=part,
+                        disable_notification=True
+                    )
             except:
                 bot_logger.error(f"Failed to send media group:\n{traceback.format_exc()}")
                 if status and status_md is not None:
@@ -608,11 +624,20 @@ class Note:
                         status_md,
                         parse_mode=ParseMode.MARKDOWN_V2,
                     )
-                sent_message = await bot.send_media_group(
-                    chat_id=chat_id,
-                    reply_to_message_id=reply_to_message_id,
-                    media=media,
-                )
+                if self.video_url:
+                    sent_message = await bot.send_media_group(
+                        chat_id=chat_id,
+                        reply_to_message_id=reply_to_message_id,
+                        media=self.medien[-1:],  # Send only the video as a single media
+                        disable_notification=True
+                    )
+                else:
+                    sent_message = await bot.send_media_group(
+                        chat_id=chat_id,
+                        reply_to_message_id=reply_to_message_id,
+                        media=media,
+                        disable_notification=True
+                    )
         await bot.send_chat_action(
             chat_id=chat_id,
             action=ChatAction.TYPING
@@ -623,25 +648,20 @@ class Note:
                 status_md,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
-        sent_message = await bot.send_message(
-            chat_id=chat_id,
-            reply_to_message_id=sent_message[0].message_id if sent_message else reply_to_message_id,
-            text='Loading ...',
-            disable_notification=True,
-        )
-        reply_id = sent_message.message_id
-        await sent_message.edit_text(
-            text=self.message if hasattr(
-                self,
-                'message'
-            ) else await self.to_telegram_message(
-                preview=bool(self.length >= 666)
-            ),
-            parse_mode=ParseMode.MARKDOWN_V2,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✨ AI Summary", callback_data=f"summary:{self.noteId}.{reply_id}")]]),
-            disable_web_page_preview=True,
-        )
-        if not sent_message:
+        await asyncio.sleep(0.667)  # To avoid hitting rate limits
+        if sent_message:
+            reply_id = sent_message[0].message_id
+            await sent_message[0].edit_caption(
+                caption=self.message if hasattr(
+                    self,
+                    'message'
+                ) else await self.to_telegram_message(
+                    preview=bool(self.length >= 666)
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✨ AI Summary", callback_data=f"summary:{self.noteId}.{reply_id}")]]),
+            )
+        else:
             bot_logger.error("No message was sent!")
             return status, status_md
         llm_data: dict[str, list[dict[str, str]] | str] = {
@@ -913,7 +933,7 @@ def parse_comment(comment_data: dict[str, Any]):
     time = comment_data.get('time', 0)
     like_count = comment_data.get('like_count', 0)
     sub_comment_count = comment_data.get('sub_comment_count', 0)
-    ip_location = comment_data.get('ip_location', 'Unknown')
+    ip_location = comment_data.get('ip_location', '?')
     data: dict[str, Any] = {
         'user': user,
         'content': content,
@@ -1076,7 +1096,7 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
         bot_logger.warning(f"Unauthorized callback attempt from user {user_id}")
         await query.answer(f"Sorry, you are not authorized to use this feature. If you wish to gain access, please contact the bot administrator.", show_alert=True)
         return
-    
+
     await query.answer()
     
     # Parse callback data: "more_info:{noteId}:{message_id}"
