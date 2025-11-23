@@ -52,6 +52,7 @@ from telegram.error import (
 from telegram.constants import (
     ParseMode,
     ChatAction,
+    # ChatMemberStatus,
 )
 from telegraph.aio import Telegraph # type: ignore
 from PIL import Image
@@ -94,6 +95,7 @@ processing_semaphore = asyncio.Semaphore(max_concurrent_requests)
 whitelist_enabled = os.getenv('WHITELIST_ENABLED', 'false').lower() == 'true'
 bot_logger.debug(f"Whitelist enabled: {whitelist_enabled}")
 whitelisted_users = []
+# private_channel_id = os.getenv('PRIVATE_CHANNEL_ID')
 
 def load_whitelist():
     """Load whitelisted user IDs from environment variable or file"""
@@ -123,13 +125,15 @@ def load_whitelist():
         except Exception as e:
             bot_logger.error(f"Error loading whitelist from {whitelist_file}: {e}")
 
-def is_user_whitelisted(user_id: int | None) -> bool:
+async def is_user_whitelisted(user_id: int | None, bot: Bot | None = None) -> bool:
     """Check if a user is whitelisted"""
     if user_id is None:
         return False
     if not whitelist_enabled:
         return True
-    return user_id in whitelisted_users
+    if user_id in whitelisted_users:
+        return True
+    return False
 
 # Load whitelist at startup
 load_whitelist()
@@ -990,16 +994,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id if update.effective_user else None
     chat = update.effective_chat
     
-    if not is_user_whitelisted(user_id):
+    if not await is_user_whitelisted(user_id, context.bot):
         bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
-        # if chat:
-        #     try:
-        #         await context.bot.send_message(
-        #             chat_id=chat.id,
-        #             text="Sorry, you are not authorized to use this bot."
-        #         )
-        #     except Exception as e:
-        #         bot_logger.error(f"Failed to send unauthorized message: {e}")
+        if chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=f"Sorry, you are not authorized to use this bot. If you wish to gain access, please contact the bot administrator.",
+                )
+            except Exception as e:
+                bot_logger.error(f"Failed to send unauthorized message: {e}")
         return
     
     if chat:
@@ -1015,16 +1019,16 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_logger.debug(f"Help requested by user {user_id}")
     chat = update.effective_chat
     
-    if not is_user_whitelisted(user_id):
+    if not await is_user_whitelisted(user_id, context.bot):
         bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
-        # if chat:
-        #     try:
-        #         await context.bot.send_message(
-        #             chat_id=chat.id,
-        #             text="Sorry, you are not authorized to use this bot."
-        #         )
-        #     except Exception as e:
-        #         bot_logger.error(f"Failed to send unauthorized message: {e}")
+        if chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=f"Sorry, you are not authorized to use this bot. If you wish to gain access, please contact the bot administrator.",
+                )
+            except Exception as e:
+                bot_logger.error(f"Failed to send unauthorized message: {e}")
         return
     
     if chat:
@@ -1037,15 +1041,15 @@ Telegraph link without media group as default output\\.
 `\\-x`  Note link with `xsec_token`\\.
 
 *Inline mode*
-Use `@xhsfeedbot <note link>` in any chat to get a short preview of the note in Telegraph page\\.
+Use `@xhsfeedbot <note link>` to get a short preview of the note in Telegraph page\\.
 
 *Commands*
 `/start` \\- Start chat with @xhsfeedbot\\.
 `/help` \\- Show this help message\\.
-`/note` \\- Forward note to Telegraph or Telegram message \\(with `-m` parameter\\)\\.
+`/note` \\- Forward note to Telegraph or Telegram message\\.
 
 *Note*
-Group privacy is on\\. You need to send command to bot manually or add bot as admin in group chat\\."""
+Group privacy is on\\. You need to send command to bot manually or add bot as administrator in group chat\\."""
         try:
             await context.bot.send_message(
                 chat_id=chat.id,
@@ -1068,9 +1072,9 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
     user_id = update.effective_user.id if update.effective_user else None
     
     # Check whitelist
-    if not is_user_whitelisted(user_id):
+    if not await is_user_whitelisted(user_id, context.bot):
         bot_logger.warning(f"Unauthorized callback attempt from user {user_id}")
-        await query.answer("Sorry, you are not authorized to use this feature.", show_alert=True)
+        await query.answer(f"Sorry, you are not authorized to use this feature. If you wish to gain access, please contact the bot administrator.", show_alert=True)
         return
     
     await query.answer()
@@ -1254,18 +1258,18 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not chat:
         return
     # Check whitelist
-    if not is_user_whitelisted(user_id):
+    if not await is_user_whitelisted(user_id, context.bot):
         bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
         msg = update.message
-        # if msg and chat:
-        #     try:
-        #         await context.bot.send_message(
-        #             chat_id=chat.id,
-        #             text="Sorry, you are not authorized to use this bot.",
-        #             reply_to_message_id=msg.message_id
-        #         )
-        #     except Exception as e:
-        #         bot_logger.error(f"Failed to send unauthorized message: {e}")
+        if msg and chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=f"Sorry, you are not authorized to use this bot. If you wish to gain access, please contact the bot administrator.",
+                    reply_to_message_id=msg.message_id
+                )
+            except Exception as e:
+                bot_logger.error(f"Failed to send unauthorized message: {e}")
         return
 
     msg = update.message
@@ -1321,7 +1325,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     if msg.caption:
         message_text += f" {msg.caption} "
 
-    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text)) and bool(user_id in whitelisted_users)
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text)) and await is_user_whitelisted(user_id, context.bot)
     url_info = get_url_info(message_text)
     if not url_info['success']:
         await context.bot.send_message(
@@ -1525,7 +1529,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     user_id = update.effective_user.id if update.effective_user else None
     
     # Check whitelist
-    if not is_user_whitelisted(user_id):
+    if not await is_user_whitelisted(user_id, context.bot):
         bot_logger.warning(f"Unauthorized inline access attempt from user {user_id}")
         # inline_query = update.inline_query
         # if inline_query:
@@ -1546,7 +1550,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     message_text = inline_query.query
     if not message_text:
         return
-    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text)) and bool(user_id in whitelisted_users)
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text)) and await is_user_whitelisted(user_id, context.bot)
     url_info = get_url_info(message_text)
     if not url_info['success']:
         return
