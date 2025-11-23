@@ -94,36 +94,7 @@ processing_semaphore = asyncio.Semaphore(max_concurrent_requests)
 # Whitelist functionality
 whitelist_enabled = os.getenv('WHITELIST_ENABLED', 'false').lower() == 'true'
 bot_logger.debug(f"Whitelist enabled: {whitelist_enabled}")
-whitelisted_users = []
-# private_channel_id = os.getenv('PRIVATE_CHANNEL_ID')
-
-def load_whitelist():
-    """Load whitelisted user IDs from environment variable or file"""
-    global whitelisted_users
-    
-    # Try to load from environment variable first (comma-separated)
-    whitelist_env = os.getenv('WHITELISTED_USER_IDS', '')
-    if whitelist_env:
-        try:
-            whitelisted_users = [int(uid.strip()) for uid in whitelist_env.split(',') if uid.strip()]
-            bot_logger.info(f"Loaded {len(whitelisted_users)} whitelisted users from environment variable")
-        except ValueError as e:
-            bot_logger.error(f"Error parsing WHITELISTED_USER_IDS: {e}")
-    
-    # Try to load from whitelist.json file if it exists
-    whitelist_file = 'whitelist.json'
-    if os.path.exists(whitelist_file):
-        try:
-            with open(whitelist_file, 'r', encoding='utf-8') as f:
-                whitelist_data: dict[str, list[int]] = json.load(f)
-                if 'users' in whitelist_data:
-                    users_list: list[int] = whitelist_data['users']
-                    whitelisted_users.extend(users_list)
-                # Remove duplicates
-                whitelisted_users = list(set(whitelisted_users))
-                bot_logger.info(f"Loaded whitelist from {whitelist_file}: {len(whitelisted_users)} users")
-        except Exception as e:
-            bot_logger.error(f"Error loading whitelist from {whitelist_file}: {e}")
+private_channel_id = int(os.getenv('CHANNEL_ID', '0'))
 
 async def is_user_whitelisted(user_id: int | None, bot: Bot | None = None) -> bool:
     """Check if a user is whitelisted"""
@@ -131,11 +102,7 @@ async def is_user_whitelisted(user_id: int | None, bot: Bot | None = None) -> bo
         return False
     if not whitelist_enabled:
         return True
-    if user_id in whitelisted_users:
-        return True
-    # Optionally check if user is a member of a private channel
     if bot is not None:
-        private_channel_id = int(os.getenv('CHANNEL_ID', '0'))
         if private_channel_id:
             try:
                 member = await bot.get_chat_member(private_channel_id, user_id)
@@ -144,9 +111,6 @@ async def is_user_whitelisted(user_id: int | None, bot: Bot | None = None) -> bo
             except BadRequest as e:
                 bot_logger.error(f"Error checking membership for user {user_id} in channel {private_channel_id}: {e}")
     return False
-
-# Load whitelist at startup
-load_whitelist()
 
 with open('redtoemoji.json', 'r', encoding='utf-8') as f:
     redtoemoji = json.load(f)
@@ -551,6 +515,7 @@ class Note:
 
     async def send_as_telegram_message(self, bot: Bot, chat_id: int, reply_to_message_id: int = 0, status: Message | None = None, status_md: str | None = None) -> tuple[Message | None, str | None]:
         sent_message = None
+        multi_media_sent = False
         if status and status_md is not None:
             status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Sending media group message`"
             await status.edit_text(
@@ -597,6 +562,8 @@ class Note:
                         media=part,
                         disable_notification=True
                     )
+                    if len(part) > 1:
+                        multi_media_sent = True
             except:
                 bot_logger.error(f"Failed to send media group:\n{traceback.format_exc()}")
                 if status and status_md is not None:
@@ -638,6 +605,8 @@ class Note:
                         media=media,
                         disable_notification=True
                     )
+                    if len(media) > 1:
+                        multi_media_sent = True
         await bot.send_chat_action(
             chat_id=chat_id,
             action=ChatAction.TYPING
@@ -648,19 +617,38 @@ class Note:
                 status_md,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
-        await asyncio.sleep(0.667)  # To avoid hitting rate limits
+        await asyncio.sleep(0.5)  # To avoid hitting rate limits
         if sent_message:
-            reply_id = sent_message[0].message_id
-            await sent_message[0].edit_caption(
-                caption=self.message if hasattr(
-                    self,
-                    'message'
-                ) else await self.to_telegram_message(
-                    preview=bool(self.length >= 666)
-                ),
-                parse_mode=ParseMode.MARKDOWN_V2,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✨ AI Summary", callback_data=f"summary:{self.noteId}.{reply_id}")]]),
-            )
+            if not multi_media_sent:
+                reply_id = sent_message[0].message_id
+                await sent_message[0].edit_caption(
+                    caption=self.message if hasattr(
+                        self,
+                        'message'
+                    ) else await self.to_telegram_message(
+                        preview=bool(self.length >= 666)
+                    ),
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✨ AI Summary", callback_data=f"summary:{self.noteId}.{reply_id}")]]),
+                )
+            else:
+                reply_id = sent_message[0].message_id
+                sent_message_main = await bot.send_message(
+                    chat_id=chat_id,
+                    reply_to_message_id=reply_id,
+                    text=self.message if hasattr(
+                        self,
+                        'message'
+                    ) else await self.to_telegram_message(
+                        preview=bool(self.length >= 666)
+                    ),
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    disable_web_page_preview=True,
+                )
+                reply_id = sent_message_main.message_id
+                await sent_message_main.edit_reply_markup(
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✨ AI Summary", callback_data=f"summary:{self.noteId}.{reply_id}")]]),
+                )
         else:
             bot_logger.error("No message was sent!")
             return status, status_md
@@ -1055,7 +1043,6 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_msg = """*Usage*
 send `xhslink\\[\\.\\]com` or `xiaohongshu\\[\\.\\]com` note link to @xhsfeedbot
 Link without `xsec_token` parameter is supported\\.
-Telegraph link without media group as default output\\.
 
 *Parameters*
 `\\-x`  Note link with `xsec_token`\\.
@@ -1068,7 +1055,7 @@ Use `@xhsfeedbot <note link>` to get a short preview of the note in Telegraph pa
 `/help` \\- Show this help message\\.
 `/note` \\- Forward note to Telegraph or Telegram message\\.
 
-*Note*
+*Group Privacy*
 Group privacy is on\\. You need to send command to bot manually or add bot as administrator in group chat\\."""
         try:
             await context.bot.send_message(
@@ -1310,11 +1297,6 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     # If there is a photo, try to decode QR code
     if msg.photo:
         try:
-            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Decoding QR code from the photo`"
-            await status.edit_text(
-                status_md,
-                parse_mode=ParseMode.MARKDOWN_V2,
-            )
             # Get the lowest resolution photo
             photo_file = await msg.photo[-1].get_file()
             
@@ -1361,23 +1343,8 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     noteId = str(url_info['noteId'])
-    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Note ID: {tg_msg_escape_markdown_v2(noteId)}`"
-    await status.edit_text(
-        status_md,
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
     xsec_token = str(url_info['xsec_token'])
-    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `xsec_token: {tg_msg_escape_markdown_v2(xsec_token) if xsec_token else "None"}`"
-    await status.edit_text(
-        status_md,
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
     anchorCommentId = str(url_info['anchorCommentId'])
-    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `anchorCommentId: {tg_msg_escape_markdown_v2(anchorCommentId) if anchorCommentId else "None"}`"
-    await status.edit_text(
-        status_md,
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
     bot_logger.info(f'Note ID: {noteId}, xsec_token: {xsec_token if xsec_token else "None"}, anchorCommentId: {anchorCommentId if anchorCommentId else "None"}')
 
     bot_logger.debug('try open note on device')
@@ -1387,12 +1354,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     open_note(noteId, anchorCommentId=anchorCommentId)
-    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Loading note data`"
-    await status.edit_text(
-        status_md,
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
-    await asyncio.sleep(3)
+    await asyncio.sleep(1.5)
 
     note_data: dict[str, Any] = {}
     comment_list_data: dict[str, Any] = {'data': {}}
@@ -1404,11 +1366,6 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
         with open(os.path.join("data", f"note_data-{noteId}.json"), "w", encoding='utf-8') as f:
             json.dump(note_data, f, indent=4, ensure_ascii=False)
             f.close()
-        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Fetch note data successfully`"
-        await status.edit_text(
-            status_md,
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
         times = 0
         while True:
             times += 1
@@ -1420,17 +1377,17 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
                     json.dump(comment_list_data, f, indent=4, ensure_ascii=False)
                     f.close()
                 bot_logger.debug('got comment list data')
-                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Fetch comment list data successfully`"
-                await status.edit_text(
-                    status_md,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                )
                 break
             except:
                 if times <= 3:
                     await asyncio.sleep(0.1)
                 else:
                     raise Exception('error when getting comment list data')
+        status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Fetch note data successfully`"
+        await status.edit_text(
+            status_md,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
     except:
         bot_logger.error(traceback.format_exc())
     finally:
@@ -1444,11 +1401,6 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
-    status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Start parsing and sending note`"
-    await status.edit_text(
-        status_md,
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
 
     try:
         try:
@@ -1485,24 +1437,18 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
                 chat_id = chat.id,
                 text = f"📕 [{tg_msg_escape_markdown_v2(note.title)}]({note.url})\n{f"\n{tg_msg_escape_markdown_v2(note.tag_string)}" if note.tags else ""}\n\n👤 [@{tg_msg_escape_markdown_v2(note.user['name'])}](https://www.xiaohongshu.com/user/profile/{note.user['id']})\n\n📰 [View via Telegraph]({note.telegraph_url})",
                 parse_mode=ParseMode.MARKDOWN_V2,
-                disable_web_page_preview=True,
                 reply_to_message_id=msg.message_id,
                 disable_notification=True,
-            )
-            status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Telegraph link sent successfully`"
-            await status.edit_text(
-                status_md,
-                parse_mode=ParseMode.MARKDOWN_V2,
+                link_preview_options=LinkPreviewOptions(
+                    is_disabled=False,
+                    url=note.telegraph_url,
+                    prefer_small_media=True,
+                    show_above_text=False,
+                )
             )
             status, status_md = await note.send_as_telegram_message(context.bot, chat.id, msg.message_id, status, status_md)
             if telegraph_msg:
                 await telegraph_msg.delete()
-            if status and status_md is not None:
-                status_md += f"\n{get_time_emoji(int(datetime.timestamp(datetime.now())))} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(int(datetime.timestamp(datetime.now()))))} \\> `Note sent successfully`"
-                await status.edit_text(
-                    status_md,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                )
             update_network_status(success=True)  # Successfully sent message
         except:
             bot_logger.error(traceback.format_exc())
@@ -1635,7 +1581,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
                     link_preview_options=LinkPreviewOptions(
                         is_disabled=False,
                         url=telegraph_url,
-                        prefer_large_media=True
+                        prefer_large_media=False
                     ),
                 ),
                 description=f"Telegraph URL with xiaohongshu.com URL ({'with' if with_xsec_token else 'no'} xsec_token)",
