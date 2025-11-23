@@ -23,7 +23,7 @@ A bot that forward REDNote to Telegram Message or Telegraph
 
 2. Device side: A rooted Android device or emulator, or jailbroken iOS device, with REDNote app installed.
 
-3. Both server and device must be in the same network, and server side should has stable access to Telegram and Telegraph server.
+3. Both server and device must be in the same network, and server side should has stable access to Telegram, Telegraph server and Gemini API.
 
 ## How it works
 ![](./res/diagram.png)
@@ -34,6 +34,7 @@ A bot that forward REDNote to Telegram Message or Telegraph
 Download [platform-tools](https://developer.android.com/tools/releases/platform-tools) and add `adb` to `PATH` if you are using an Android device.
 
 ```bash
+sudo apt install libzbar-dev
 git clone https://github.com/francgossin/xhsfeedbot.git
 cd xhsfeedbot
 mkdir -p data
@@ -42,38 +43,42 @@ python3.13 -m venv .venv
 ```
 Create a `.env` file with your own configuration.
 ```python
-BOT_TOKEN='Telegram Bot Token'
-ADMIN_ID='Bot Owner Telegram ID'
+BOT_TOKEN="TelegramBotToken"
+ADMIN_ID=1234567890
 
 # 0: Android with root; 1: Jailbroken iOS
-TARGET_DEVICE_TYPE=1
+TARGET_DEVICE_TYPE=0
 
-# ssh information necessary if your target device type is jailbroken iOS
-SSH_IP=127.0.0.1 # device IP address
-SSH_PORT=22 # device ssh port, defaut 22
-SSH_USERNAME=root
-SSH_PASSWORD=alpine
-# Default user name and password for jailbroken iOS. You may have to configure your own.
+FLASK_SERVER_NAME=example.com
+FLASK_SERVER_PORT=6789
 
 WHITELIST_ENABLED=true
+
+BARK_TOKEN=barktoken
+BARK_KEY=barkkey
+BARK_IV=123
+
+GEMINI_API_KEY=AIGEMINISERVICE
+
+CHANNEL_ID=-1234567890
 ```
 
-If you want to enable whitelist, create a `whitelist.json` file.
+If you want to enable whitelist, create a `whitelist.json` file. Or you can create a channel and add bot as administrator.
 ```json
 {
   "users": [
-    101010101,
-    010101010
+    101010101
   ]
 }
 ```
 
-Open three terminal windows or use `screen`, start all three scripts.
+Run xhsfeedbot.py, the network must have a stable access to Telegram and Gemini.
 ```bash
 # export https_proxy when necessary.
 python xhsfeedbot.py
 ```
 
+Run these two scripts on a local computer with Android phone / emulator / iOS device.
 ```bash
 python mitm_server.py
 ```
