@@ -1081,7 +1081,7 @@ async def AI_summary_button_callback(update: Update, context: ContextTypes.DEFAU
     # Check whitelist
     if not await is_user_whitelisted(user_id, context.bot):
         bot_logger.warning(f"Unauthorized callback attempt from user {user_id}")
-        await query.answer(f"Sorry, you are not authorized to use this feature. If you wish to gain access, please contact the bot administrator.", show_alert=True)
+        # await query.answer(f"Sorry, you are not authorized to use this feature. If you wish to gain access, please contact the bot administrator.", show_alert=True)
         return
 
     await query.answer()
@@ -1268,15 +1268,15 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not await is_user_whitelisted(user_id, context.bot):
         bot_logger.warning(f"Unauthorized access attempt from user {user_id}")
         msg = update.message
-        if msg and chat:
-            try:
-                await context.bot.send_message(
-                    chat_id=chat.id,
-                    text=f"Sorry, you are not authorized to use this bot. If you wish to gain access, please contact the bot administrator.",
-                    reply_to_message_id=msg.message_id
-                )
-            except Exception as e:
-                bot_logger.error(f"Failed to send unauthorized message: {e}")
+        # if msg and chat:
+        #     try:
+        #         await context.bot.send_message(
+        #             chat_id=chat.id,
+        #             text=f"Sorry, you are not authorized to use this bot. If you wish to gain access, please contact the bot administrator.",
+        #             reply_to_message_id=msg.message_id
+        #         )
+        #     except Exception as e:
+        #         bot_logger.error(f"Failed to send unauthorized message: {e}")
         return
 
     msg = update.message
@@ -1327,7 +1327,7 @@ async def _note2feed_internal(update: Update, context: ContextTypes.DEFAULT_TYPE
     if msg.caption:
         message_text += f" {msg.caption} "
 
-    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text)) and await is_user_whitelisted(user_id, context.bot)
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
     url_info = get_url_info(message_text)
     if not url_info['success']:
         await context.bot.send_message(
@@ -1516,7 +1516,7 @@ async def _inline_note2feed_internal(update: Update, context: ContextTypes.DEFAU
     message_text = inline_query.query
     if not message_text:
         return
-    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text)) and await is_user_whitelisted(user_id, context.bot)
+    with_xsec_token = bool(re.search(r"[^\S]+-x(?!\S)", message_text))
     url_info = get_url_info(message_text)
     if not url_info['success']:
         return
