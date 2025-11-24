@@ -34,7 +34,7 @@ A bot that forward REDNote to Telegram Message or Telegraph
 Download [platform-tools](https://developer.android.com/tools/releases/platform-tools) and add `adb` to `PATH` if you are using an Android device.
 
 ```bash
-sudo apt install libzbar-dev
+sudo apt install libzbar-dev ffmpeg
 git clone https://github.com/francgossin/xhsfeedbot.git
 cd xhsfeedbot
 mkdir -p data
