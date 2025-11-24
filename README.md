@@ -14,6 +14,7 @@ A bot that forward REDNote to Telegram Message or Telegraph
 [![Require: python-dotenv 1.1.1](https://img.shields.io/badge/python--dotenv-1.1.1-blue)](https://pypi.org/project/python-dotenv/)
 [![Require: requests 2.32.5](https://img.shields.io/badge/requests-2.32.5-blue)](https://pypi.org/project/requests/)
 [![Require: paramiko 4.0.0](https://img.shields.io/badge/paramiko-4.0.0-blue)](https://www.paramiko.org/)
+[![Require: FFmpeg](https://shields.io/badge/FFmpeg-%23171717.svg?logo=ffmpeg&style=for-the-badge&labelColor=171717&logoColor=5cb85c)](https://ffmpeg.org)
 
 [![xhsfeed Bot](https://img.shields.io/badge/xhsfeed-Bot-green?logo=telegram)](https://t.me/xhsfeedbot)
 
@@ -63,14 +64,7 @@ GEMINI_API_KEY=AIGEMINISERVICE
 CHANNEL_ID=-1234567890
 ```
 
-If you want to enable whitelist, create a `whitelist.json` file. Or you can create a channel and add bot as administrator.
-```json
-{
-  "users": [
-    101010101
-  ]
-}
-```
+If you want to enable whitelist, create a channel and add bot as administrator. Anybody in this channel will be recognized as an authorized user.
 
 Run xhsfeedbot.py, the network must have a stable access to Telegram and Gemini.
 ```bash
