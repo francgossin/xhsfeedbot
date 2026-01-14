@@ -268,7 +268,7 @@ class Note:
                         )
                 original_img_url = each['original']
                 if re.findall(r'sns-na-i\d.xhscdn.com', original_img_url):
-                    original_img_url = re.sub(r'sns-na-i\d.xhscdn.com', 'sns-na-i6.xhscdn.com', original_img_url)
+                    original_img_url = re.sub(r'sns-na-i\d.xhscdn.com', 'sns-na-i6.xhscdn.com', original_img_url).split('?imageView')[0]
                 self.images_list.append(
                     {
                         'live': '',
@@ -291,7 +291,7 @@ class Note:
         if 'video' in note_data['data'][0]['note_list'][0]:
             self.video_url = note_data['data'][0]['note_list'][0]['video']['url']
             if not re.findall(r'sign=[0-9a-z]+', self.video_url):
-                self.video_url = re.sub(r'[0-9a-z\-]+\.xhscdn\.(com|net)', 'sns-bak-v1.xhscdn.com', self.video_url)
+                self.video_url = re.sub(r'[0-9a-z\-]+\.xhscdn\.(com|net)', 'sns-bak-v1.xhscdn.com', self.video_url).split('?imageView')[0]
         if telegraph:
             self.to_html()
         tgmsg_result = self.to_telegram_message(preview=bool(self.length >= 666))
