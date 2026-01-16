@@ -218,7 +218,7 @@ class Note:
         self.user: dict[str, str | int] = {
             'id': note_data['data'][0]['user']['id'],
             'name': note_data['data'][0]['user']['name'],
-            'red_id': note_data['data'][0]['user']['red_id'],
+            'red_id': note_data['data'][0]['user'].get('red_id', ''),
             'image': get_clean_url(note_data['data'][0]['user']['image']),
         }
         # self.text_language_code = note_data['data'][0]['note_list'][0]['text_language_code']
@@ -350,7 +350,7 @@ class Note:
         for lines in self.desc.split('\n'):
             line_html = tg_msg_escape_html(lines)
             html += f'<blockquote>{line_html}</blockquote>'
-        html += f'<h4>👤 <a href="https://www.xiaohongshu.com/user/profile/{self.user["id"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> @{self.user["name"]} ({self.user["red_id"]})</a></h4>'
+        html += f'<h4>👤 <a href="https://www.xiaohongshu.com/user/profile/{self.user["id"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> @{self.user["name"]} ({self.user.get("red_id", "")})</a></h4>'
         html += f'<img src="{self.user["image"]}"></img>'
         html += f'<p>{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time)}</p>'
         html += f'<p>❤️ {self.liked_count} ⭐ {self.collected_count} 💬 {self.comments_count} 🔗 {self.shared_count}</p>'
@@ -365,7 +365,7 @@ class Note:
             for i, comment in enumerate(self.comments):
                 html += f'<h4>💬 <a href="https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""}">Comment</a></h4>'
                 if 'target_comment' in comment:
-                    html += f'<p>↪️ <a href="https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> {'@' + comment["target_comment"]["user"].get("nickname", "")} ({comment["target_comment"]["user"]["red_id"]})</a></p>'
+                    html += f'<p>↪️ <a href="https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> {'@' + comment["target_comment"]["user"].get("nickname", "")} ({comment["target_comment"]["user"].get('red_id', '')})</a></p>'
                 html += f'<p>{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}</p>'
                 for pic in comment['pictures']:
                     if 'mp4' in pic:
@@ -375,12 +375,12 @@ class Note:
                 if comment.get('audio_url', ''):
                     html += f'<p><a href="{comment["audio_url"]}">🎤 Voice</a></p>'
                 html += f'<p>❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]}<br>📍 {tg_msg_escape_html(comment["ip_location"])}<br>{get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}</p>'
-                html += f'<p>👤 <a href="https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> {'@' + comment["user"].get("nickname", "")} ({comment["user"]["red_id"]})</a></p>'
+                html += f'<p>👤 <a href="https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> {'@' + comment["user"].get("nickname", "")} ({comment["user"].get("red_id", "")})</a></p>'
                 for sub_comment in comment.get('sub_comments', []):
                     html += '<blockquote><blockquote>'
                     html += f'<h4>💬 <a href="https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={sub_comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""}">Comment</a></h4>'
                     if 'target_comment' in sub_comment:
-                        html += f'<br><p>  ↪️  <a href="https://www.xiaohongshu.com/user/profile/{sub_comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> {'@' + sub_comment["target_comment"]["user"].get("nickname", "")} ({sub_comment["target_comment"]["user"]["red_id"]})</a></p>'
+                        html += f'<br><p>  ↪️  <a href="https://www.xiaohongshu.com/user/profile/{sub_comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> {'@' + sub_comment["target_comment"]["user"].get("nickname", "")} ({sub_comment["target_comment"]["user"].get("red_id", "")})</a></p>'
                     html += f'<br><p>{tg_msg_escape_html(replace_redemoji_with_emoji(sub_comment["content"]))}</p>'
                     for pic in sub_comment['pictures']:
                         if 'mp4' in pic:
@@ -390,7 +390,7 @@ class Note:
                     if sub_comment.get('audio_url', ''):
                         html += f'<br><p><a href="{sub_comment["audio_url"]}">🎤 Voice</a></p>'
                     html += f'<br><p>❤️ {sub_comment["like_count"]} 💬 {sub_comment["sub_comment_count"]}<br>📍 {tg_msg_escape_html(sub_comment["ip_location"])}<br>{get_time_emoji(sub_comment["time"])} {convert_timestamp_to_timestr(sub_comment["time"])}</p>'
-                    html += f'<br><p>👤 <a href="https://www.xiaohongshu.com/user/profile/{sub_comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> {'@' + sub_comment["user"].get("nickname", "")} ({sub_comment["user"]["red_id"]})</a></p>'
+                    html += f'<br><p>👤 <a href="https://www.xiaohongshu.com/user/profile/{sub_comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""}"> {'@' + sub_comment["user"].get("nickname", "")} ({sub_comment["user"].get("red_id", "")})</a></p>'
                     html += '</blockquote></blockquote>'
                 if i != len(self.comments) - 1:
                     html += f'<hr>'
@@ -403,7 +403,7 @@ class Note:
         for img in self.images_list:
             if not img['live']:
                 img = requests.get(img["url"]).content # TODO image to base64?
-        self.content += f'\n发布者：@{self.user["name"]} ({self.user["red_id"]})\n'
+        self.content += f'\n发布者：@{self.user["name"]} ({self.user.get('red_id', '')})\n'
         self.content += f'{get_time_emoji(self.time)} {convert_timestamp_to_timestr(self.time)}\n'
         self.content += f'点赞：{self.liked_count}收藏：{self.collected_count}评论：{self.comments_count}分享：{self.shared_count}\n'
         if hasattr(self, 'ip_location'):
@@ -417,18 +417,18 @@ class Note:
                 if comment["content"]:
                     self.content += f'💬 评论\n'
                     # if 'target_comment' in comment:
-                    #     self.content += f'↪️ @{comment["target_comment"]["user"].get("nickname", "")} ({comment["target_comment"]["user"]["red_id"]})\n'
+                    #     self.content += f'↪️ @{comment["target_comment"]["user"].get("nickname", "")} ({comment["target_comment"]["user"].get('red_id', '')})\n'
                     self.content += f'{tg_msg_escape_html(replace_redemoji_with_emoji(comment["content"]))}\n'
                     self.content += f'点赞：{comment["like_count"]}\nIP 地址：{tg_msg_escape_html(comment["ip_location"])}\n{get_time_emoji(comment["time"])} {convert_timestamp_to_timestr(comment["time"])}\n'
-                    # self.content += f'发布者：@{comment["user"].get("nickname", "")} ({comment["user"]["red_id"]})\n'
+                    # self.content += f'发布者：@{comment["user"].get("nickname", "")} ({comment["user"].get('red_id', '')})\n'
                 for sub_comment in comment.get('sub_comments', []):
                     if sub_comment["content"]:
                         self.content += f'💬 回复\n'
                         # if 'target_comment' in sub_comment:
-                            # self.content += f'↪️ @{sub_comment["target_comment"]["user"].get("nickname", "")} ({sub_comment["target_comment"]["user"]["red_id"]})\n'
+                            # self.content += f'↪️ @{sub_comment["target_comment"]["user"].get("nickname", "")} ({sub_comment["target_comment"]["user"].get('red_id', '')})\n'
                         self.content += f'{tg_msg_escape_html(replace_redemoji_with_emoji(sub_comment["content"]))}\n'
                         self.content += f'点赞：{sub_comment["like_count"]}\nIP 地址：{tg_msg_escape_html(sub_comment["ip_location"])}\n{get_time_emoji(sub_comment["time"])} {convert_timestamp_to_timestr(sub_comment["time"])}\n'
-                        # self.content += f'发布者：@{sub_comment["user"].get("nickname", "")} ({sub_comment["user"]["red_id"]})\n'
+                        # self.content += f'发布者：@{sub_comment["user"].get("nickname", "")} ({sub_comment["user"].get('red_id', '')})\n'
                 if i != len(self.comments) - 1:
                     self.content += f'\n'
         bot_logger.debug(f"String generated, \n\n{self.content}\n\n")
@@ -444,7 +444,7 @@ class Note:
             )
         response = await self.telegraph_account.create_page( # type: ignore
             title=f"{self.title} @{self.user['name']}",
-            author_name=f'@{self.user["name"]} ({self.user["red_id"]})',
+            author_name=f'@{self.user["name"]} ({self.user.get('red_id', '')})',
             author_url=f"https://www.xiaohongshu.com/user/profile/{self.user['id']}",
             html_content=self.html,
         )
@@ -466,7 +466,7 @@ class Note:
                 message += f'\n📝 [Telegraph]({tg_msg_escape_markdown_v2(self.telegraph_url)})\n'
             elif self.telegraph:
                 message += f'\n📝 [Telegraph]({tg_msg_escape_markdown_v2(await self.to_telegraph())})\n'
-        message += f'\n[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n'
+        message += f'\n[@{tg_msg_escape_markdown_v2(self.user["name"])} \\({tg_msg_escape_markdown_v2(self.user.get('red_id', ''))}\\)](https://www.xiaohongshu.com/user/profile/{self.user["id"]})\n'
         if type(self.liked_count) == str:
             like_html = tg_msg_escape_markdown_v2(self.liked_count)
         else:
@@ -677,12 +677,12 @@ class Note:
                 comment_text = ''
                 comment_text += f'💬 [Comment](https://www.xiaohongshu.com/discovery/item/{self.noteId}?anchorCommentId={comment["id"]}{f"&xsec_token={self.xsec_token}" if self.with_xsec_token else ""})'
                 if 'target_comment' in comment:
-                    comment_text += f'\n↪️ [@{tg_msg_escape_markdown_v2(comment["target_comment"]["user"].get("nickname", ""))} \\({tg_msg_escape_markdown_v2(comment["target_comment"]["user"]["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""})\n'
+                    comment_text += f'\n↪️ [@{tg_msg_escape_markdown_v2(comment["target_comment"]["user"].get("nickname", ""))} \\({tg_msg_escape_markdown_v2(comment["target_comment"]["user"].get('red_id', ''))}\\)](https://www.xiaohongshu.com/user/profile/{comment["target_comment"]["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""})\n'
                 else:
                     comment_text += '\n'
                 comment_text += f'{make_block_quotation(replace_redemoji_with_emoji(comment["content"]))}\n'
                 comment_text += f'❤️ {comment["like_count"]} 💬 {comment["sub_comment_count"]} 📍 {tg_msg_escape_markdown_v2(comment["ip_location"])} {get_time_emoji(comment["time"])} {tg_msg_escape_markdown_v2(convert_timestamp_to_timestr(comment["time"]))}\n'
-                comment_text += f'👤 [@{tg_msg_escape_markdown_v2(comment["user"].get("nickname", ""))} \\({tg_msg_escape_markdown_v2(comment["user"]["red_id"])}\\)](https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""})'
+                comment_text += f'👤 [@{tg_msg_escape_markdown_v2(comment["user"].get("nickname", ""))} \\({tg_msg_escape_markdown_v2(comment["user"].get('red_id', ''))}\\)](https://www.xiaohongshu.com/user/profile/{comment["user"]["userid"]}{f"?xsec_token={self.xsec_token}" if self.with_xsec_token else ""})'
                 bot_logger.debug(f"Sending comment:\n{comment_text}")
                 if 'target_comment' in comment and _ > 0:
                     reply_id = comment_id_to_message_id[comment['target_comment']['id']].message_id
